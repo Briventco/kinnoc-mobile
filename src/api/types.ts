@@ -1,0 +1,290 @@
+/**
+ * Domain models shared by the API layer and the UI.
+ * These mirror the payloads described in docs/api-contract.md. Dates are ISO-8601 strings.
+ */
+
+export type ID = string;
+export type ISODate = string;
+
+/** Cursor pagination used by every list endpoint. `nextCursor` is null on the last page. */
+export interface Page<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface MediaAsset {
+  id: ID;
+  kind: 'image' | 'video';
+  url: string;
+  width: number;
+  height: number;
+  /** Short description for screen readers. */
+  alt?: string;
+}
+
+export interface UserSummary {
+  id: ID;
+  displayName: string;
+  username: string;
+  avatarUrl: string | null;
+}
+
+export interface Profile extends UserSummary {
+  headline: string | null;
+  location: string | null;
+  bio: string | null;
+  website: string | null;
+  interests: string[];
+  followerCount: number;
+  followingCount: number;
+  communityCount: number;
+  isMe: boolean;
+  isFollowing: boolean;
+}
+
+export interface ProfileUpdate {
+  displayName: string;
+  headline: string | null;
+  location: string | null;
+  bio: string | null;
+  website: string | null;
+  interests: string[];
+}
+
+export type CommunityVisibility = 'public' | 'private';
+export type MembershipStatus = 'none' | 'member' | 'pending';
+
+export interface CommunitySummary {
+  id: ID;
+  name: string;
+  /** Short monogram (1–2 letters) used when there is no photo. */
+  monogram: string;
+  photoUrl: string | null;
+  memberCount: number;
+  category: string;
+  visibility: CommunityVisibility;
+}
+
+export interface Community extends CommunitySummary {
+  description: string;
+  membership: MembershipStatus;
+  pinned: { title: string; body: string } | null;
+  rules: string[];
+}
+
+/** One row of the Communities inbox: a community the viewer belongs to and its single conversation. */
+export interface InboxEntry {
+  community: CommunitySummary;
+  lastMessage: {
+    senderName: string;
+    isMine: boolean;
+    text: string;
+    kind: 'text' | 'photo' | 'link';
+    sentAt: ISODate;
+  } | null;
+  unreadCount: number;
+  hasMention: boolean;
+  isPinned: boolean;
+  isMuted: boolean;
+  /** Names of members typing now. Filled by the realtime channel. */
+  typing: string[];
+}
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
+export interface LinkPreview {
+  url: string;
+  title: string;
+  domain: string;
+  thumbnailUrl: string | null;
+  /** e.g. "58 min" for a video. */
+  detail: string | null;
+  isVideo: boolean;
+}
+
+export type DeliveryStatus = 'sending' | 'sent' | 'read' | 'failed';
+
+export interface Message {
+  id: ID;
+  /** Client-generated id used to reconcile optimistic sends with the server copy. */
+  clientId: string | null;
+  communityId: ID;
+  sender: UserSummary;
+  isMine: boolean;
+  text: string;
+  sentAt: ISODate;
+  replyTo: { id: ID; senderName: string; text: string } | null;
+  attachments: MediaAsset[];
+  link: LinkPreview | null;
+  reactions: Reaction[];
+  /** Only meaningful for the viewer's own messages. */
+  status: DeliveryStatus;
+}
+
+export interface SendMessageInput {
+  communityId: ID;
+  clientId: string;
+  text: string;
+  replyToId: ID | null;
+  /** Local file URIs chosen by the user; the API uploads them. */
+  attachmentUris: string[];
+}
+
+export interface Comment {
+  id: ID;
+  author: UserSummary;
+  text: string;
+  createdAt: ISODate;
+}
+
+export interface Post {
+  kind: 'post';
+  id: ID;
+  author: UserSummary;
+  community: Pick<CommunitySummary, 'id' | 'name'> | null;
+  text: string;
+  media: MediaAsset[];
+  createdAt: ISODate;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+  savedByMe: boolean;
+  topReply: Comment | null;
+  isMine: boolean;
+}
+
+/** A community announcement shown on a mist band in the Feed. */
+export interface CommunityUpdate {
+  kind: 'update';
+  id: ID;
+  community: CommunitySummary;
+  title: string;
+  body: string;
+  startsAt: ISODate | null;
+  place: string | null;
+  createdAt: ISODate;
+}
+
+export type FeedItem = Post | CommunityUpdate;
+export type FeedScope = 'for-you' | 'following' | 'communities';
+
+export interface CreatePostInput {
+  text: string;
+  communityId: ID | null;
+  mediaUris: string[];
+}
+
+export type OpportunityType = 'job' | 'internship' | 'scholarship' | 'hackathon' | 'programme';
+export type ResourceFormat = 'guide' | 'video' | 'course' | 'template' | 'article';
+export type WorkArrangement = 'remote' | 'onsite' | 'hybrid';
+
+interface DiscoverBase {
+  id: ID;
+  title: string;
+  summary: string;
+  coverUrl: string | null;
+  savedByMe: boolean;
+  /** External page to apply, register or read. Opened in the system browser. */
+  externalUrl: string | null;
+}
+
+export interface EventItem extends DiscoverBase {
+  kind: 'event';
+  startsAt: ISODate;
+  endsAt: ISODate | null;
+  venue: string;
+  isOnline: boolean;
+  host: string;
+}
+
+export interface OpportunityItem extends DiscoverBase {
+  kind: 'opportunity';
+  type: OpportunityType;
+  organisation: string;
+  organisationMonogram: string;
+  location: string | null;
+  arrangement: WorkArrangement | null;
+  closesAt: ISODate | null;
+  eligibility: string | null;
+}
+
+export interface ResourceItem extends DiscoverBase {
+  kind: 'resource';
+  format: ResourceFormat;
+  publisher: string;
+  /** e.g. "12 min read". */
+  length: string | null;
+}
+
+export type DiscoverItem = EventItem | OpportunityItem | ResourceItem;
+export type DiscoverFilter = 'all' | 'events' | 'opportunities' | 'resources';
+
+export interface DiscoverHome {
+  thisWeek: DiscoverItem[];
+  closingSoon: OpportunityItem[];
+  upcomingEvents: EventItem[];
+  resources: ResourceItem[];
+}
+
+export type NotificationKind =
+  | 'mention'
+  | 'reply'
+  | 'like'
+  | 'reaction'
+  | 'community'
+  | 'event-reminder'
+  | 'deadline';
+
+export interface AppNotification {
+  id: ID;
+  kind: NotificationKind;
+  actor: UserSummary | null;
+  /** Rich text in plain segments; `strong` segments are set in 600 ink. */
+  title: { text: string; strong?: boolean }[];
+  excerpt: string | null;
+  createdAt: ISODate;
+  read: boolean;
+  /** Visual identity when there is no actor. */
+  community?: CommunitySummary;
+  event?: { startsAt: ISODate };
+  opportunity?: { organisationMonogram: string };
+  /** In-app destination, e.g. "/community/c_tech". */
+  target: string | null;
+}
+
+export interface NotificationPreferences {
+  mentions: boolean;
+  replies: boolean;
+  likes: boolean;
+  communityActivity: boolean;
+  reminders: boolean;
+}
+
+/** One frame of a story: a photo, or short text on a brand colour. Stories expire after 24 hours. */
+export type StoryFrame =
+  | { id: ID; kind: 'image'; url: string; createdAt: ISODate; caption: string | null }
+  | { id: ID; kind: 'text'; text: string; background: 'navy' | 'blue' | 'ink'; createdAt: ISODate };
+
+/** All of one person's current story frames, oldest first. */
+export interface StoryReel {
+  author: UserSummary;
+  isMine: boolean;
+  frames: StoryFrame[];
+  /** True once the viewer has seen every frame. */
+  seen: boolean;
+}
+
+export interface CreateStoryInput {
+  mediaUri: string;
+  caption: string | null;
+}
+
+export type SavedItem =
+  | { kind: 'post'; savedAt: ISODate; post: Post }
+  | { kind: 'discover'; savedAt: ISODate; item: DiscoverItem };
+
+export type SaveTarget = { kind: 'post'; id: ID } | { kind: 'discover'; id: ID };
