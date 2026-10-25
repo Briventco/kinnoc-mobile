@@ -144,6 +144,8 @@ export interface UploadedImage {
 export interface InboxEntry {
   community: CommunitySummary;
   lastMessage: {
+    /** Position in the conversation, when the backend provides it. */
+    seq?: number | null;
     senderName: string;
     isMine: boolean;
     text: string;

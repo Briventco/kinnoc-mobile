@@ -17,10 +17,14 @@ import { nextCursor, snapshot } from '@/lib/cache';
 import { keys, queryClient } from '@/lib/query';
 import { api, realtime } from '@/services';
 
+import { withLiveMessage } from './inboxCache';
 import { markDeleted, maxSeq, mergeMessages, patchMessage, type MessagePages } from './messageCache';
 
-/** The inbox is not covered by live events, so the HTTP build refreshes it on an interval. */
-const INBOX_POLL_MS = env.apiMode === 'http' ? 15_000 : false;
+/**
+ * The inbox is live for the communities it lists (`useInboxLive`); polling picks up new
+ * memberships and anything missed while disconnected.
+ */
+const INBOX_POLL_MS = env.apiMode === 'http' ? (realtime.live ? 30_000 : 15_000) : false;
 /** Conversations poll only when there is no live transport. */
 const MESSAGE_POLL_MS = env.apiMode === 'http' && !realtime.live ? 15_000 : false;
 
@@ -431,6 +435,44 @@ export function useConversationEvents(communityId: string, enabled: boolean, onL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityId, enabled]);
   return { typing };
+}
+
+/**
+ * Keeps the inbox live while it is on screen: subscribes to every listed community so rows show
+ * new messages, unread counts and who is typing as it happens. Live messages also go into any
+ * cached conversation, so opening it later shows them at once.
+ */
+export function useInboxLive(communityIds: string[]) {
+  const key = [...communityIds].sort().join(',');
+  useEffect(() => {
+    if (!realtime.live || !key) return;
+    const unsubscribes = key.split(',').map((id) =>
+      realtime.subscribe(id, (event) => {
+        switch (event.type) {
+          case 'message':
+            merge(id, [event.message]);
+            queryClient.setQueryData<InboxEntry[]>(keys.inbox, (entries) => withLiveMessage(entries, id, event.message));
+            break;
+          case 'deleted':
+            queryClient.setQueryData<MessagePages>(keys.messages(id), (d) => markDeleted(d, event.messageId));
+            break;
+          case 'typing':
+            patchInbox(id, (e) => ({ ...e, typing: event.names }));
+            break;
+          case 'read':
+            patchInbox(id, (e) => ({ ...e, unreadCount: 0, hasMention: false }));
+            break;
+          case 'ended':
+            void queryClient.invalidateQueries({ queryKey: keys.inbox });
+            break;
+        }
+      }),
+    );
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+      queryClient.setQueryData<InboxEntry[]>(keys.inbox, (entries) => entries?.map((e) => (e.typing.length ? { ...e, typing: [] } : e)));
+    };
+  }, [key]);
 }
 
 /** The live connection's state, for a quiet "Connecting…" hint. */

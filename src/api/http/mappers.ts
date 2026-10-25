@@ -180,6 +180,7 @@ export function toInboxEntry(e: ApiInboxEntry): InboxEntry {
     community: toCommunity(e.community),
     lastMessage: m
       ? {
+          seq: m.seq,
           senderName: m.isMine ? 'You' : (m.sender?.displayName.split(' ')[0] ?? 'Former member'),
           isMine: m.isMine,
           text: m.text ?? '',

@@ -28,7 +28,7 @@ import {
   useSendMessage,
 } from '@/features/communities/hooks';
 import { accessCopy, MembershipActions } from '@/features/communities/MembershipActions';
-import { DateSeparator, MessageBubble } from '@/features/communities/MessageBubble';
+import { DateSeparator, MessageBubble, TypingBubble } from '@/features/communities/MessageBubble';
 import { useMe } from '@/features/profile/hooks';
 import { flatten } from '@/lib/cache';
 import { formatDateSeparator, isSameDay, plural, uid } from '@/lib/format';
@@ -261,7 +261,12 @@ function Conversation({ community, renderHeader }: { community: Community; rende
               <MessageBubble message={item.message} showHeader={item.showHeader} onLongPress={setActionsFor} onReact={onReact} onRetry={retry} />
             )
           }
-          ListHeaderComponent={<View style={{ height: space[3] }} />}
+          ListHeaderComponent={
+            <>
+              {typing.length ? <TypingBubble names={typing} /> : null}
+              <View style={{ height: space[3] }} />
+            </>
+          }
           ListFooterComponent={
             messages.hasNextPage ? (
               <ListFooter loading={messages.isFetchingNextPage} />

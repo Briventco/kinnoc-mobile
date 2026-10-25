@@ -108,6 +108,17 @@ describe('createSocketRealtime', () => {
     expect(events).toContainEqual({ type: 'subscribed', lastSeq: 42 });
   });
 
+  it('gives a second listener of the same community its own catch-up point', async () => {
+    const { realtime, sockets, events, listen } = setup();
+    realtime.subscribe(COMMUNITY, () => {});
+    await sockets[0].open();
+    await flush();
+    sockets[0].subscribeAck = () => ({ ok: true, data: { lastSeq: 60 } });
+    realtime.subscribe(COMMUNITY, listen);
+    await flush();
+    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 60 });
+  });
+
   it('maps server events for the subscribed community only', async () => {
     const { realtime, sockets, events, listen } = setup();
     realtime.subscribe(COMMUNITY, listen);

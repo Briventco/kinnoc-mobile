@@ -217,11 +217,12 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = null;
       const set = listeners.get(communityId) ?? new Set<Listener>();
-      const first = set.size === 0;
       set.add(onEvent);
       listeners.set(communityId, set);
       const s = open();
-      if (first && s.connected) void join(communityId);
+      // Subscribing again is harmless on the server, and its `lastSeq` lets a newly opened
+      // conversation catch up even when the inbox already holds the subscription.
+      if (s.connected) void join(communityId);
 
       return () => {
         set.delete(onEvent);

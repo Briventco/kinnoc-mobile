@@ -23,6 +23,7 @@ import {
   useDeclineInvitation,
   useInbox,
   useInboxActions,
+  useInboxLive,
   useJoinCommunity,
   useMarkCommunityRead,
   useMyCommunities,
@@ -133,6 +134,7 @@ function Inbox({ filter, query, onDiscover }: { filter: 'all' | 'unread'; query:
   const { mute, pin } = useInboxActions();
   const markRead = useMarkCommunityRead();
   const [menuFor, setMenuFor] = useState<InboxEntry | null>(null);
+  useInboxLive(inbox.data?.map((e) => e.community.id) ?? []);
   const q = useDeferredValue(query.trim().toLowerCase());
 
   const rows = useMemo(() => {

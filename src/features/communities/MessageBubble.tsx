@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Check, CheckCheck, CircleAlert, Clock, Play, Reply } from 'lucide-react-native';
-import { memo } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { memo, useEffect, useState } from 'react';
+import { Animated, Linking, StyleSheet, View } from 'react-native';
 
 import type { Message } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
@@ -188,6 +188,46 @@ function DeliveryLine({ message, onRetry }: { message: Message; onRetry: (m: Mes
   );
 }
 
+/** Three dots that pulse in turn, in an incoming bubble, while other members type. */
+export function TypingBubble({ names }: { names: string[] }) {
+  const [dots] = useState(() => [0, 1, 2].map(() => new Animated.Value(0.3)));
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.stagger(
+        160,
+        dots.map((v) =>
+          Animated.sequence([
+            Animated.timing(v, { toValue: 1, duration: 280, useNativeDriver: true }),
+            Animated.timing(v, { toValue: 0.3, duration: 280, useNativeDriver: true }),
+          ]),
+        ),
+      ),
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [dots]);
+
+  if (!names.length) return null;
+  const label = names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : `${names[0]} and ${names.length - 1} others are typing`;
+  return (
+    <View style={[styles.wrap, styles.wrapGap]} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">
+      <View style={styles.theirsRow}>
+        <View style={styles.avatarCol} />
+        <View style={styles.theirsCol}>
+          <Text variant="meta" color="textTertiary" style={styles.senderLine}>
+            {label}
+          </Text>
+          <View style={[styles.bubble, styles.theirs, styles.typing]}>
+            {dots.map((opacity, i) => (
+              <Animated.View key={i} style={[styles.dot, { opacity }]} />
+            ))}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /** Caps label between two hairlines. */
 export function DateSeparator({ label }: { label: string }) {
   return (
@@ -231,6 +271,8 @@ const styles = StyleSheet.create({
   reactionMine: { backgroundColor: colors.primarySubtle, borderWidth: 1, borderColor: colors.primarySubtleStrong },
   reactionText: { fontFamily: 'Figtree_600SemiBold' },
   delivery: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, minHeight: 20 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 14 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.textTertiary },
   separator: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingTop: space[5], paddingBottom: space[1] },
   rule: { flex: 1, height: 1, backgroundColor: colors.border },
 });
