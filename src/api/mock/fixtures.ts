@@ -97,15 +97,20 @@ type CommunitySeed = Community & {
   hasMention: boolean;
 };
 
-const community = (
-  c: Omit<CommunitySeed, 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules'> &
-    Partial<Pick<CommunitySeed, 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules'>>,
-): CommunitySeed => ({
+type Defaulted = 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules' | 'slug' | 'categorySlug' | 'coverUrl' | 'joinPolicy' | 'role';
+
+const community = (c: Omit<CommunitySeed, Defaulted> & Partial<Pick<CommunitySeed, Defaulted>>): CommunitySeed => ({
   isPinned: false,
   isMuted: false,
   unreadCount: 0,
   hasMention: false,
   rules: ['Be kind and stay on topic.', 'No spam or self-promotion without context.', 'Share sources when you post resources.'],
+  slug: c.id.replace(/^c_/, ''),
+  categorySlug: c.category.toLowerCase(),
+  coverUrl: null,
+  // As on the server, private communities only grow by invitation.
+  joinPolicy: c.visibility === 'private' ? 'invite-only' : 'open',
+  role: c.membership === 'member' ? 'member' : null,
   ...c,
 });
 
@@ -120,6 +125,8 @@ export const communities: CommunitySeed[] = [
     visibility: 'public',
     description: 'Developers, designers and makers sharing what they build, sessions and resources.',
     membership: 'member',
+    role: 'owner',
+    joinPolicy: 'approval',
     pinned: { title: 'Start here', body: 'Rules, resources and helpful links' },
     isPinned: true,
     unreadCount: 3,
@@ -211,7 +218,7 @@ export const communities: CommunitySeed[] = [
     category: 'Data',
     visibility: 'public',
     description: 'Analysts, data scientists and ML engineers meeting monthly in Lagos.',
-    membership: 'none',
+    membership: 'invited',
     pinned: null,
   }),
   community({
@@ -221,24 +228,29 @@ export const communities: CommunitySeed[] = [
     photoUrl: null,
     memberCount: 128,
     category: 'Writing',
-    visibility: 'private',
+    visibility: 'public',
+    joinPolicy: 'approval',
     description: 'A small circle for writers sharing drafts and feedback. Members approve new joiners.',
     membership: 'none',
     pinned: null,
   }),
 ];
 
-type MessageSeed = Omit<Message, 'clientId' | 'isMine' | 'status' | 'attachments' | 'link' | 'reactions' | 'replyTo'> &
-  Partial<Pick<Message, 'attachments' | 'link' | 'reactions' | 'replyTo' | 'status'>>;
+type MessageSeed = Omit<Message, 'clientId' | 'isMine' | 'status' | 'attachments' | 'link' | 'reactions' | 'replyTo' | 'seq' | 'deletedAt' | 'sender'> &
+  Partial<Pick<Message, 'attachments' | 'link' | 'reactions' | 'replyTo' | 'status'>> & { sender: UserSummary };
 
-const msg = (m: MessageSeed): Message => ({
+/** Sequence numbers are assigned by the mock adapter, in order, per conversation. */
+const msg = ({ sender, ...m }: MessageSeed): Message => ({
   clientId: null,
+  seq: null,
+  deletedAt: null,
   attachments: [],
   link: null,
   reactions: [],
   replyTo: null,
   status: 'read',
-  isMine: m.sender.id === ME_ID,
+  isMine: sender.id === ME_ID,
+  sender: { username: sender.username, displayName: sender.displayName, avatarUrl: sender.avatarUrl },
   ...m,
 });
 

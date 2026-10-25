@@ -24,19 +24,32 @@ interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({ message, showHeader, onLongPress, onReact, onRetry }: MessageBubbleProps) {
   const mine = message.isMine;
   const failed = message.status === 'failed';
+  const deleted = !!message.deletedAt;
+  const senderName = message.sender?.displayName ?? 'Former member';
 
   const bubble = (
     <Pressable
-      onLongPress={() => !failed && message.status !== 'sending' && onLongPress(message)}
+      onLongPress={() => !failed && !deleted && message.status !== 'sending' && onLongPress(message)}
       onPress={failed ? () => onRetry(message) : undefined}
       delayLongPress={300}
       pressedOpacity={0.85}
       accessibilityRole={failed ? 'button' : undefined}
-      accessibilityLabel={`${mine ? 'You' : message.sender.displayName}, ${formatTime(message.sentAt)}: ${message.text}${failed ? '. Not sent. Double tap to retry.' : ''}`}
-      accessibilityHint={failed ? undefined : 'Long press to react or reply'}
-      style={[styles.bubble, mine ? styles.mine : styles.theirs, !showHeader && (mine ? styles.mineCont : styles.theirsCont), failed && styles.failed]}
+      accessibilityLabel={`${mine ? 'You' : senderName}, ${formatTime(message.sentAt)}: ${deleted ? 'Message deleted' : message.text}${failed ? '. Not sent. Double tap to retry.' : ''}`}
+      accessibilityHint={failed || deleted ? undefined : 'Long press for actions'}
+      style={[
+        styles.bubble,
+        mine ? styles.mine : styles.theirs,
+        !showHeader && (mine ? styles.mineCont : styles.theirsCont),
+        failed && styles.failed,
+        deleted && styles.deleted,
+      ]}
     >
-      {message.replyTo ? (
+      {deleted ? (
+        <Text variant="message" color="textTertiary">
+          {mine ? 'You deleted this message' : 'Message deleted'}
+        </Text>
+      ) : null}
+      {message.replyTo && !deleted ? (
         <View style={styles.inset}>
           <View style={styles.replyHead}>
             <Reply size={14} color={colors.brandNavy} strokeWidth={2} />
@@ -49,7 +62,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
           </Text>
         </View>
       ) : null}
-      {message.text ? (
+      {message.text && !deleted ? (
         <Text variant="message" color={mine ? 'onPrimary' : 'text'} selectable>
           {message.text}
         </Text>
@@ -98,18 +111,18 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
         <View style={styles.mineCol}>
           {bubble}
           <Reactions message={message} onReact={onReact} alignEnd />
-          <DeliveryLine message={message} onRetry={onRetry} />
+          {deleted ? null : <DeliveryLine message={message} onRetry={onRetry} />}
         </View>
       ) : (
         <View style={styles.theirsRow}>
           <View style={styles.avatarCol}>
-            {showHeader ? <Avatar name={message.sender.displayName} uri={message.sender.avatarUrl} size={32} /> : null}
+            {showHeader ? <Avatar name={senderName} uri={message.sender?.avatarUrl} size={32} /> : null}
           </View>
           <View style={styles.theirsCol}>
             {showHeader ? (
               <Text variant="meta" color="textTertiary" style={styles.senderLine}>
                 <Text variant="name" style={styles.senderName}>
-                  {message.sender.displayName}
+                  {senderName}
                 </Text>{' '}
                 {formatTime(message.sentAt)}
               </Text>
@@ -204,6 +217,7 @@ const styles = StyleSheet.create({
   theirsCont: { borderTopLeftRadius: radius.bubble },
   mineCont: { borderTopRightRadius: radius.bubble },
   failed: { opacity: 0.7 },
+  deleted: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   inset: { backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
   replyHead: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   replyName: { fontFamily: 'Figtree_700Bold' },

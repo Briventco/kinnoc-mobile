@@ -17,13 +17,17 @@ export function validatePassword(value: string, mode: 'sign-in' | 'sign-up') {
 export function validateName(value: string) {
   const v = value.trim();
   if (!v) return 'Add your name so people know who you are.';
-  if (v.length > 50) return 'Keep your name under 50 characters.';
+  if (v.length > 60) return 'Keep your name under 60 characters.';
   return null;
 }
 
+/** Same rules as the Kinnoc API (case-insensitive, stored in lowercase). */
+const RESERVED_USERNAMES = ['admin', 'administrator', 'api', 'brivent', 'help', 'kinnoc', 'me', 'moderator', 'null', 'official', 'root', 'security', 'staff', 'support', 'system', 'undefined'];
+
 export function validateUsername(value: string) {
-  const v = value.trim();
+  const v = value.trim().toLowerCase();
   if (!v) return 'Choose a username.';
-  if (!/^[a-zA-Z0-9_]{3,20}$/.test(v)) return 'Use 3 to 20 letters, numbers or underscores.';
+  if (!/^[a-z][a-z0-9_]{2,29}$/.test(v)) return 'Use 3 to 30 letters, numbers or underscores, starting with a letter.';
+  if (RESERVED_USERNAMES.includes(v)) return 'That username is reserved. Try another.';
   return null;
 }

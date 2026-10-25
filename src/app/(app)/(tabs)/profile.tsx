@@ -20,6 +20,7 @@ import { SavedRow, savedKey } from '@/features/saved/SavedRow';
 import { flatten } from '@/lib/cache';
 import { formatCount } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, gutter, radius, space, type } from '@/theme';
 
 type ProfileTab = 'posts' | 'saved';
@@ -96,12 +97,16 @@ export default function ProfileScreen() {
               </Text>
             </Pressable>
           ) : null}
-          <Text variant="preview" color="textSecondary">
-            <Text variant="name">{formatCount(p.followerCount)}</Text> followers
-          </Text>
-          <Text variant="preview" color="textSecondary">
-            <Text variant="name">{formatCount(p.followingCount)}</Text> following
-          </Text>
+          {api.capabilities.social ? (
+            <>
+              <Text variant="preview" color="textSecondary">
+                <Text variant="name">{formatCount(p.followerCount)}</Text> followers
+              </Text>
+              <Text variant="preview" color="textSecondary">
+                <Text variant="name">{formatCount(p.followingCount)}</Text> following
+              </Text>
+            </>
+          ) : null}
         </View>
         <Button label="Edit profile" variant="quiet" fullWidth onPress={() => router.push('/settings/edit-profile')} />
       </View>
@@ -120,8 +125,12 @@ export default function ProfileScreen() {
               </View>
             ))}
           </View>
-        ) : (
+        ) : api.capabilities.profileDetails ? (
           <Button variant="text" label="Add interests" onPress={() => router.push('/settings/edit-profile')} style={styles.alignStart} />
+        ) : (
+          <Text variant="preview" color="textTertiary">
+            No interests added yet.
+          </Text>
         )}
       </View>
 

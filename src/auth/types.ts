@@ -52,8 +52,11 @@ export interface AuthService {
   signUp(input: SignUpInput): Promise<SignUpResult>;
   requestPasswordReset(email: string): Promise<void>;
   signOut(): Promise<void>;
-  /** A fresh access token for API calls, refreshed if needed. Null when signed out. */
-  getAccessToken(): Promise<string | null>;
+  /**
+   * A fresh access token for API calls, refreshed if needed. Null when signed out. `refresh`
+   * forces a refresh, for when the API has rejected the current token.
+   */
+  getAccessToken(options?: { refresh?: boolean }): Promise<string | null>;
   /** Fires when the provider changes the session (refresh failure, sign-out elsewhere). */
   subscribe(listener: (session: AuthSession | null) => void): () => void;
 }

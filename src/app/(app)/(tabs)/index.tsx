@@ -20,6 +20,7 @@ import { useUnreadNotificationCount } from '@/features/notifications/hooks';
 import { useMe } from '@/features/profile/hooks';
 import { flatten } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, gutter, size, space } from '@/theme';
 
 const SCOPES: { key: FeedScope; label: string }[] = [
@@ -122,8 +123,12 @@ function FeedList({ scope }: { scope: FeedScope }) {
           <Hairline />
         </>
       ) : null}
-      <Composer />
-      <Hairline />
+      {api.capabilities.social ? (
+        <>
+          <Composer />
+          <Hairline />
+        </>
+      ) : null}
     </>
   );
 

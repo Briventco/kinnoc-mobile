@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { queryClient } from '@/lib/query';
-import { auth, setMockViewer, setUnauthorizedHandler } from '@/services';
+import { auth, realtime, setMockViewer, setUnauthorizedHandler } from '@/services';
 
 import type { AuthSession, SignUpInput, SignUpResult } from './types';
 
@@ -27,7 +27,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(next);
     setMockViewer(next ? { displayName: next.user.displayName, username: next.user.username } : null);
     if (!next) {
-      // Drop every cached response so the next person on this device sees none of it.
+      // Close the chat connection and drop every cached response, so the next person on this
+      // device sees none of it.
+      realtime.reset();
       queryClient.clear();
     }
     setStatus(next ? 'signedIn' : 'signedOut');

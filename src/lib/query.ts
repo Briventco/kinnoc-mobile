@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/errors';
-import type { DiscoverFilter, FeedScope } from '@/api/types';
+import type { CommunityBrowseFilter, DiscoverFilter, FeedScope, MembershipStatus } from '@/api/types';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,8 +22,14 @@ export const keys = {
   post: (id: string) => ['post', id] as const,
   comments: (id: string) => ['post', id, 'comments'] as const,
   inbox: ['inbox'] as const,
-  communityBrowse: (q: string) => ['communities', 'browse', q] as const,
+  account: ['account'] as const,
+  communityBrowse: (f: CommunityBrowseFilter) => ['communities', 'browse', f.query, f.category] as const,
+  categories: ['categories'] as const,
+  myCommunities: (status: MembershipStatus) => ['communities', 'mine', status] as const,
   community: (id: string) => ['community', id] as const,
+  communityMembers: (id: string) => ['community', id, 'members'] as const,
+  joinRequests: (id: string) => ['community', id, 'join-requests'] as const,
+  invitations: (id: string) => ['community', id, 'invitations'] as const,
   messages: (communityId: string) => ['messages', communityId] as const,
   discoverHome: ['discover', 'home'] as const,
   discoverList: (filter: DiscoverFilter, q: string) => ['discover', 'list', filter, q] as const,

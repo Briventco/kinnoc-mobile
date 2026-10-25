@@ -12,12 +12,17 @@ import { ApiError } from '../errors';
 import type { ConversationEvent, RealtimeClient } from '../realtime';
 import type {
   Community,
+  CommunityMember,
+  CommunityRole,
   CommunitySummary,
   DiscoverItem,
   FeedItem,
   InboxEntry,
+  Invitation,
+  JoinRequest,
   Message,
   Page,
+  Person,
   Post,
   Profile,
   SavedItem,
@@ -25,6 +30,9 @@ import type {
   StoryReel,
 } from '../types';
 import * as fx from './fixtures';
+
+const asPerson = (u: Person): Person => ({ username: u.username, displayName: u.displayName, avatarUrl: u.avatarUrl });
+const people = Object.values(fx.users).filter((u) => u.id !== fx.ME_ID).map(asPerson);
 
 const delay = (ms = 250 + Math.random() * 350) => new Promise((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -37,6 +45,7 @@ function paginate<T>(items: T[], cursor: string | null, pageSize: number): Page<
 
 const summary = (c: Community): CommunitySummary => ({
   id: c.id,
+  slug: c.slug,
   name: c.name,
   monogram: c.monogram,
   photoUrl: c.photoUrl,
@@ -67,7 +76,23 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     stories: clone(fx.storiesByAuthor),
     myFrames: [] as StoryFrame[],
     seenFrames: new Set(fx.seenStoryFrames),
+    /** Other members per community; the viewer is added from `membership` and `role`. */
+    members: {} as Record<string, CommunityMember[]>,
+    joinRequests: {} as Record<string, JoinRequest[]>,
+    invitations: {} as Record<string, Invitation[]>,
   };
+  // Sequence numbers in send order, as the server assigns them.
+  for (const list of Object.values(state.messages)) list.forEach((m, i) => (m.seq = i + 1));
+  state.communities.forEach((c, i) => {
+    const others = people.slice(0, 3 + (i % 5));
+    state.members[c.id] = others.map((p, j) => ({
+      ...p,
+      role: (j === 0 && c.role !== 'owner' ? 'owner' : j === 1 ? 'moderator' : 'member') as CommunityRole,
+      joinedAt: new Date(Date.now() - (j + 2) * 86_400_000 * 7).toISOString(),
+    }));
+    state.joinRequests[c.id] = c.joinPolicy === 'approval' && c.role === 'owner' ? [{ user: people[people.length - 1], requestedAt: new Date(Date.now() - 3_600_000).toISOString() }] : [];
+    state.invitations[c.id] = [];
+  });
   const listeners = new Map<string, Set<(e: ConversationEvent) => void>>();
   const emit = (communityId: string, event: ConversationEvent) =>
     listeners.get(communityId)?.forEach((fn) => fn(event));
@@ -89,8 +114,8 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
   };
 
   const findCommunity = (id: string) => {
-    const c = state.communities.find((x) => x.id === id);
-    if (!c) throw new ApiError('not_found', 'Community not found', 404);
+    const c = state.communities.find((x) => x.id === id || x.slug === id);
+    if (!c) throw new ApiError('not_found', 'Community not found', 404, {}, 'COMMUNITY_NOT_FOUND');
     return c;
   };
   const findPost = (id: string) => {
@@ -116,10 +141,59 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     savedByMe: isSaved(item.kind === 'post' ? 'post' : 'discover', item.id),
   });
   const assertMember = (c: Community) => {
-    if (c.membership !== 'member') throw new ApiError('forbidden', 'Join this community to see the conversation', 403);
+    if (c.membership !== 'member') throw new ApiError('forbidden', 'Join this community to see the conversation', 403, {}, 'MEMBERSHIP_REQUIRED');
+  };
+  const assertRole = (c: Community, roles: CommunityRole[]) => {
+    if (!c.role || !roles.includes(c.role)) throw new ApiError('forbidden', 'Not allowed', 403, {}, 'INSUFFICIENT_COMMUNITY_ROLE');
+  };
+  /** Mock communities keep a few extra fields for the inbox; strip them like the API would. */
+  const toCommunity = (c: Community): Community => ({
+    ...summary(c),
+    description: c.description,
+    categorySlug: c.categorySlug,
+    coverUrl: c.coverUrl,
+    joinPolicy: c.joinPolicy,
+    membership: c.membership,
+    role: c.role,
+    pinned: c.pinned,
+    rules: c.rules,
+  });
+  const membersOf = (c: Community): CommunityMember[] => {
+    const others = state.members[c.id] ?? [];
+    if (c.membership !== 'member' || !c.role) return others;
+    const meMember: CommunityMember = { ...asPerson(meSummary()), role: c.role, joinedAt: new Date(Date.now() - 30 * 86_400_000).toISOString() };
+    return [meMember, ...others];
+  };
+  const findMember = (c: Community, username: string) => {
+    const m = (state.members[c.id] ?? []).find((x) => x.username === username);
+    if (!m) throw new ApiError('not_found', 'Member not found', 404, {}, 'MEMBER_NOT_FOUND');
+    return m;
   };
 
   const api: KinnocApi = {
+    capabilities: {
+      social: true,
+      reactions: true,
+      messageAttachments: true,
+      inboxPreferences: true,
+      profileDetails: true,
+    },
+    account: {
+      async load() {
+        await delay(150);
+        const p = me();
+        return { id: p.id, email: null, profile: { username: p.username, displayName: p.displayName } };
+      },
+      async createProfile() {
+        return api.account.load();
+      },
+    },
+    media: {
+      async uploadCommunityImage(localUri) {
+        await delay(600);
+        return { key: localUri, url: localUri };
+      },
+    },
     feed: {
       async list(scope, cursor) {
         await delay();
@@ -201,13 +275,13 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         const entries: InboxEntry[] = state.communities
           .filter((c) => c.membership === 'member')
           .map((c) => {
-            const list = state.messages[c.id] ?? [];
+            const list = (state.messages[c.id] ?? []).filter((m) => !m.deletedAt);
             const last = list[list.length - 1];
             return {
               community: summary(c),
               lastMessage: last
                 ? {
-                    senderName: last.isMine ? 'You' : last.sender.displayName.split(' ')[0],
+                    senderName: last.isMine ? 'You' : (last.sender?.displayName.split(' ')[0] ?? 'Former member'),
                     isMine: last.isMine,
                     text: last.text,
                     kind: last.attachments.length && !last.text ? ('photo' as const) : last.link ? ('link' as const) : ('text' as const),
@@ -227,42 +301,192 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
           });
         return clone(entries);
       },
-      async browse(query, cursor) {
+      async browse({ query, category }, cursor) {
         await delay();
         const q = query.trim().toLowerCase();
         const list = state.communities
-          .filter((c) => !q || c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || c.description.toLowerCase().includes(q))
+          .filter((c) => c.visibility === 'public')
+          .filter((c) => !category || c.categorySlug === category)
+          .filter((c) => q.length < 2 || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q))
           .sort((a, b) => Number(a.membership === 'member') - Number(b.membership === 'member') || b.memberCount - a.memberCount)
-          .map((c) => ({ ...summary(c), membership: c.membership }));
+          .map(toCommunity);
         return clone(paginate(list, cursor, 20));
       },
-      async get(id) {
+      async categories() {
+        await delay(150);
+        const seen = new Map(state.communities.map((c) => [c.categorySlug, c.category]));
+        return [...seen].map(([slug, name]) => ({ slug, name })).sort((a, b) => a.name.localeCompare(b.name));
+      },
+      async get(ref) {
         await delay();
-        const c = findCommunity(id);
-        const community: Community = {
-          ...summary(c),
-          description: c.description,
-          membership: c.membership,
-          pinned: c.pinned,
-          rules: c.rules,
+        return clone(toCommunity(findCommunity(ref)));
+      },
+      async create(input) {
+        await delay(600);
+        if (state.communities.some((c) => c.name.toLowerCase() === input.name.trim().toLowerCase())) {
+          throw new ApiError('conflict', 'A community with that name exists', 409, {}, 'SLUG_TAKEN');
+        }
+        const name = input.name.trim();
+        const c = {
+          id: `c_${Date.now()}`,
+          slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+          name,
+          monogram: name.split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase(),
+          photoUrl: input.avatarKey ?? null,
+          coverUrl: input.coverKey ?? null,
+          memberCount: 1,
+          category: state.communities.find((x) => x.categorySlug === input.category)?.category ?? input.category,
+          categorySlug: input.category,
+          visibility: input.visibility,
+          joinPolicy: input.visibility === 'private' ? ('invite-only' as const) : input.joinPolicy,
+          description: input.description.trim(),
+          membership: 'member' as const,
+          role: 'owner' as const,
+          pinned: null,
+          rules: [],
+          isPinned: false,
+          isMuted: false,
+          unreadCount: 0,
+          hasMention: false,
         };
-        return clone(community);
+        state.communities.unshift(c);
+        state.members[c.id] = [];
+        state.joinRequests[c.id] = [];
+        state.invitations[c.id] = [];
+        state.messages[c.id] = [];
+        return clone(toCommunity(c));
+      },
+      async update(id, changes) {
+        await delay(500);
+        const c = findCommunity(id);
+        if (c.role !== 'owner') throw new ApiError('forbidden', 'Owner only', 403, {}, 'INSUFFICIENT_COMMUNITY_ROLE');
+        if (changes.name !== undefined) c.name = changes.name.trim();
+        if (changes.description !== undefined) c.description = changes.description.trim();
+        if (changes.category !== undefined) c.categorySlug = changes.category;
+        if (changes.visibility !== undefined) c.visibility = changes.visibility;
+        if (changes.joinPolicy !== undefined) c.joinPolicy = changes.joinPolicy;
+        if (c.visibility === 'private') c.joinPolicy = 'invite-only';
+        if (changes.avatarKey !== undefined) c.photoUrl = changes.avatarKey;
+        if (changes.coverKey !== undefined) c.coverUrl = changes.coverKey;
+        return clone(toCommunity(c));
       },
       async join(id) {
         await delay(500);
         const c = findCommunity(id);
-        if (c.membership === 'none') {
-          c.membership = c.visibility === 'private' ? 'pending' : 'member';
-          if (c.membership === 'member') c.memberCount += 1;
+        if (c.membership === 'invited' || (c.membership !== 'member' && c.joinPolicy === 'open')) {
+          c.membership = 'member';
+          c.role = 'member';
+          c.memberCount += 1;
+          state.messages[c.id] ??= [];
+        } else if (c.membership === 'none') {
+          if (c.joinPolicy === 'invite-only') throw new ApiError('forbidden', 'Invitation required', 403, {}, 'INVITATION_REQUIRED');
+          c.membership = 'pending';
         }
         return api.communities.get(id);
       },
       async leave(id) {
         await delay(400);
         const c = findCommunity(id);
+        if (c.role === 'owner') throw new ApiError('conflict', 'Owner cannot leave', 409, {}, 'OWNER_CANNOT_LEAVE');
         if (c.membership === 'member') c.memberCount -= 1;
         c.membership = 'none';
+        c.role = null;
         c.unreadCount = 0;
+      },
+      async cancelRequest(id) {
+        await delay(300);
+        const c = findCommunity(id);
+        if (c.membership === 'pending') c.membership = 'none';
+      },
+      async declineInvitation(id) {
+        await delay(300);
+        const c = findCommunity(id);
+        if (c.membership === 'invited') c.membership = 'none';
+      },
+      async mine(status, cursor) {
+        await delay();
+        return clone(paginate(state.communities.filter((c) => c.membership === status).map(toCommunity), cursor, 20));
+      },
+      async members(id, cursor) {
+        await delay();
+        const c = findCommunity(id);
+        if (c.membership !== 'member' && c.visibility !== 'public') throw new ApiError('forbidden', 'Members only', 403, {}, 'MEMBERSHIP_REQUIRED');
+        return clone(paginate(membersOf(c), cursor, 20));
+      },
+      async setRole(id, username, role) {
+        await delay(300);
+        const c = findCommunity(id);
+        assertRole(c, ['owner']);
+        const m = findMember(c, username);
+        m.role = role;
+        return clone(m);
+      },
+      async removeMember(id, username) {
+        await delay(300);
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        const m = findMember(c, username);
+        if (m.role !== 'member' && c.role !== 'owner') throw new ApiError('forbidden', 'Owner only', 403, {}, 'INSUFFICIENT_COMMUNITY_ROLE');
+        state.members[c.id] = state.members[c.id].filter((x) => x.username !== username);
+        c.memberCount -= 1;
+      },
+      async transferOwnership(id, username) {
+        await delay(400);
+        const c = findCommunity(id);
+        assertRole(c, ['owner']);
+        const m = findMember(c, username);
+        m.role = 'owner';
+        c.role = 'moderator';
+        return clone(m);
+      },
+      async joinRequests(id, cursor) {
+        await delay();
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        return clone(paginate(state.joinRequests[c.id] ?? [], cursor, 20));
+      },
+      async approveRequest(id, username) {
+        await delay(300);
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        const request = (state.joinRequests[c.id] ?? []).find((r) => r.user.username === username);
+        if (!request) throw new ApiError('not_found', 'Request not found', 404, {}, 'JOIN_REQUEST_NOT_FOUND');
+        state.joinRequests[c.id] = state.joinRequests[c.id].filter((r) => r !== request);
+        const member: CommunityMember = { ...request.user, role: 'member', joinedAt: new Date().toISOString() };
+        state.members[c.id].push(member);
+        c.memberCount += 1;
+        return clone(member);
+      },
+      async rejectRequest(id, username) {
+        await delay(300);
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        state.joinRequests[c.id] = (state.joinRequests[c.id] ?? []).filter((r) => r.user.username !== username);
+      },
+      async invitations(id, cursor) {
+        await delay();
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        return clone(paginate(state.invitations[c.id] ?? [], cursor, 20));
+      },
+      async invite(id, username) {
+        await delay(400);
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        const name = username.trim().toLowerCase();
+        const user = Object.values(fx.users).find((u) => u.username === name && u.id !== fx.ME_ID);
+        if (!user) throw new ApiError('not_found', 'No such user', 404, {}, 'PROFILE_NOT_FOUND');
+        if (state.members[c.id].some((m) => m.username === name)) throw new ApiError('conflict', 'Already a member', 409, {}, 'ALREADY_MEMBER');
+        if (state.invitations[c.id].some((i) => i.user.username === name)) throw new ApiError('conflict', 'Already invited', 409, {}, 'ALREADY_INVITED');
+        const invitation: Invitation = { user: asPerson(user), invitedBy: asPerson(meSummary()), invitedAt: new Date().toISOString() };
+        state.invitations[c.id].push(invitation);
+        return clone(invitation);
+      },
+      async revokeInvitation(id, username) {
+        await delay(300);
+        const c = findCommunity(id);
+        assertRole(c, ['owner', 'moderator']);
+        state.invitations[c.id] = state.invitations[c.id].filter((i) => i.user.username !== username);
       },
       async setMuted(id, muted) {
         await delay(200);
@@ -292,21 +516,45 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         const newestFirst = [...(state.messages[communityId] ?? [])].reverse();
         return clone(paginate(newestFirst, cursor, 15));
       },
+      async since(communityId, seq, cursor) {
+        await delay(150);
+        assertMember(findCommunity(communityId));
+        const newer = (state.messages[communityId] ?? []).filter((m) => (m.seq ?? 0) > seq);
+        return clone(paginate(newer, cursor, 50));
+      },
+      async remove(communityId, messageId) {
+        await delay(250);
+        const c = findCommunity(communityId);
+        assertMember(c);
+        const m = findMessage(messageId);
+        if (!m.isMine && c.role !== 'owner' && c.role !== 'moderator') {
+          throw new ApiError('forbidden', 'Not allowed', 403, {}, 'INSUFFICIENT_COMMUNITY_ROLE');
+        }
+        m.deletedAt ??= new Date().toISOString();
+        m.text = '';
+        m.attachments = [];
+        m.link = null;
+        emit(communityId, { type: 'deleted', messageId });
+      },
       async send({ communityId, clientId, text, replyToId, attachmentUris }) {
         await delay(500);
         const c = findCommunity(communityId);
         assertMember(c);
         if (text.includes('/fail')) throw new ApiError('network', 'Simulated send failure (mock adapter)');
         const replyTo = replyToId ? findMessage(replyToId) : null;
+        const existing = (state.messages[communityId] ?? []).find((m) => m.clientId === clientId);
+        if (existing) return clone(existing);
         const message: Message = {
           id: `m_${Date.now()}`,
           clientId,
           communityId,
-          sender: meSummary(),
+          seq: (state.messages[communityId]?.length ?? 0) + 1,
+          sender: asPerson(meSummary()),
           isMine: true,
           text: text.trim(),
           sentAt: new Date().toISOString(),
-          replyTo: replyTo ? { id: replyTo.id, senderName: replyTo.sender.displayName, text: replyTo.text } : null,
+          deletedAt: null,
+          replyTo: replyTo ? { id: replyTo.id, senderName: replyTo.sender?.displayName ?? 'Former member', text: replyTo.text || 'Deleted message' } : null,
           attachments: attachmentUris.map((uri, i) => ({ id: `att_${Date.now()}_${i}`, kind: 'image', url: uri, width: 1200, height: 900 })),
           link: null,
           reactions: [],
@@ -479,6 +727,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
 
   /** Mock realtime: shows a short typing indicator after you send, to exercise the channel. */
   const realtime: RealtimeClient = {
+    live: false,
     subscribe(communityId, onEvent) {
       const set = listeners.get(communityId) ?? new Set();
       set.add(onEvent);
@@ -486,6 +735,9 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       return () => set.delete(onEvent);
     },
     sendTyping() {},
+    status: () => 'idle',
+    onStatus: () => () => {},
+    reset() {},
   };
 
   const send = api.messages.send;

@@ -1,8 +1,16 @@
 import type {
+  Account,
+  ApiCapabilities,
   AppNotification,
+  Category,
   Comment,
   Community,
+  CommunityBrowseFilter,
+  CommunityInput,
+  CommunityMember,
+  CommunityRole,
   CommunitySummary,
+  CreateProfileInput,
   CreatePostInput,
   DiscoverFilter,
   DiscoverHome,
@@ -11,6 +19,9 @@ import type {
   FeedScope,
   ID,
   InboxEntry,
+  Invitation,
+  JoinRequest,
+  MembershipStatus,
   Message,
   NotificationPreferences,
   Page,
@@ -23,6 +34,7 @@ import type {
   SavedItem,
   SaveTarget,
   SendMessageInput,
+  UploadedImage,
 } from './types';
 
 /**
@@ -31,6 +43,17 @@ import type {
  * development. Screens only ever see this interface. See docs/api-contract.md for endpoints.
  */
 export interface KinnocApi {
+  /** What this backend supports; screens hide the rest. */
+  capabilities: ApiCapabilities;
+  account: {
+    /**
+     * Creates or syncs the caller's account after sign-in and returns it. Idempotent; call on
+     * every sign-in and app launch.
+     */
+    load(): Promise<Account>;
+    /** Onboarding: creates the caller's profile (username and display name). */
+    createProfile(input: CreateProfileInput): Promise<Account>;
+  };
   feed: {
     list(scope: FeedScope, cursor: string | null): Promise<Page<FeedItem>>;
     get(postId: ID): Promise<Post>;
@@ -42,10 +65,33 @@ export interface KinnocApi {
   };
   communities: {
     inbox(): Promise<InboxEntry[]>;
-    browse(query: string, cursor: string | null): Promise<Page<CommunitySummary & { membership: Community['membership'] }>>;
-    get(communityId: ID): Promise<Community>;
-    join(communityId: ID): Promise<Community>;
-    leave(communityId: ID): Promise<void>;
+    /** Public communities, newest first. */
+    browse(filter: CommunityBrowseFilter, cursor: string | null): Promise<Page<Community>>;
+    categories(): Promise<Category[]>;
+    /** By ID or slug. */
+    get(ref: string): Promise<Community>;
+    create(input: CommunityInput): Promise<Community>;
+    /** Owner only. Omitted fields are unchanged. */
+    update(id: ID, changes: Partial<CommunityInput>): Promise<Community>;
+    /** Joins, requests to join, or accepts an invitation, depending on the policy and the viewer's state. */
+    join(id: ID): Promise<Community>;
+    leave(id: ID): Promise<void>;
+    cancelRequest(id: ID): Promise<void>;
+    declineInvitation(id: ID): Promise<void>;
+    /** The viewer's communities with the given relationship. */
+    mine(status: Exclude<MembershipStatus, 'none'>, cursor: string | null): Promise<Page<Community>>;
+    members(id: ID, cursor: string | null): Promise<Page<CommunityMember>>;
+    /** Owner only. Ownership changes only through `transferOwnership`. */
+    setRole(id: ID, username: string, role: Exclude<CommunityRole, 'owner'>): Promise<CommunityMember>;
+    removeMember(id: ID, username: string): Promise<void>;
+    /** Owner only; the previous owner becomes a moderator. */
+    transferOwnership(id: ID, username: string): Promise<CommunityMember>;
+    joinRequests(id: ID, cursor: string | null): Promise<Page<JoinRequest>>;
+    approveRequest(id: ID, username: string): Promise<CommunityMember>;
+    rejectRequest(id: ID, username: string): Promise<void>;
+    invitations(id: ID, cursor: string | null): Promise<Page<Invitation>>;
+    invite(id: ID, username: string): Promise<Invitation>;
+    revokeInvitation(id: ID, username: string): Promise<void>;
     setMuted(communityId: ID, muted: boolean): Promise<void>;
     setPinned(communityId: ID, pinned: boolean): Promise<void>;
     /** Marks the conversation read up to `lastMessageId`, or up to the latest message when null. */
@@ -56,8 +102,16 @@ export interface KinnocApi {
   messages: {
     /** Newest first. `cursor` pages back through older history. Members only. */
     list(communityId: ID, cursor: string | null): Promise<Page<Message>>;
+    /** Catch-up after a reconnect: messages after `seq`, oldest first; follow `nextCursor` until null. */
+    since(communityId: ID, seq: number, cursor: string | null): Promise<Page<Message>>;
     send(input: SendMessageInput): Promise<Message>;
+    /** Sender, owner or moderator. The message keeps its place, without its text. */
+    remove(communityId: ID, messageId: ID): Promise<void>;
     react(messageId: ID, emoji: string, add: boolean): Promise<Reaction[]>;
+  };
+  media: {
+    /** Uploads a local image for a community avatar or cover. */
+    uploadCommunityImage(localUri: string): Promise<UploadedImage>;
   };
   discover: {
     home(): Promise<DiscoverHome>;

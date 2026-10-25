@@ -51,25 +51,93 @@ export interface ProfileUpdate {
   interests: string[];
 }
 
-export type CommunityVisibility = 'public' | 'private';
-export type MembershipStatus = 'none' | 'member' | 'pending';
+/** Public: listed in discovery. Unlisted: reachable by its link (the ID). Private: members and invitees only. */
+export type CommunityVisibility = 'public' | 'unlisted' | 'private';
+/** How someone who can see a community gets in. Private communities are always invite-only. */
+export type JoinPolicy = 'open' | 'approval' | 'invite-only';
+/** The viewer's relationship with a community. `pending` is a join request waiting for review. */
+export type MembershipStatus = 'none' | 'member' | 'pending' | 'invited';
+export type CommunityRole = 'owner' | 'moderator' | 'member';
+
+/** A community category. Categories reuse the curated interest catalogue. */
+export interface Category {
+  slug: string;
+  name: string;
+}
+
+/** Another person as shown in community lists and chat. User IDs are never exposed by the API. */
+export interface Person {
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
 
 export interface CommunitySummary {
   id: ID;
+  /** Readable identifier; the API accepts it wherever it accepts the ID. */
+  slug: string;
   name: string;
   /** Short monogram (1–2 letters) used when there is no photo. */
   monogram: string;
   photoUrl: string | null;
   memberCount: number;
+  /** Category display name. */
   category: string;
   visibility: CommunityVisibility;
 }
 
 export interface Community extends CommunitySummary {
   description: string;
+  categorySlug: string;
+  coverUrl: string | null;
+  joinPolicy: JoinPolicy;
   membership: MembershipStatus;
+  /** The viewer's role; null unless they are a member. */
+  role: CommunityRole | null;
   pinned: { title: string; body: string } | null;
   rules: string[];
+}
+
+/** Fields for creating a community; every field but `slug` can be changed later by the owner. */
+export interface CommunityInput {
+  name: string;
+  description: string;
+  /** Category slug. */
+  category: string;
+  visibility: CommunityVisibility;
+  joinPolicy: JoinPolicy;
+  /** Keys returned by `media.uploadCommunityImage`. Null removes the image on update. */
+  avatarKey?: string | null;
+  coverKey?: string | null;
+}
+
+export interface CommunityBrowseFilter {
+  query: string;
+  /** Category slug, or null for every category. */
+  category: string | null;
+}
+
+export interface CommunityMember extends Person {
+  role: CommunityRole;
+  joinedAt: ISODate;
+}
+
+export interface JoinRequest {
+  user: Person;
+  requestedAt: ISODate;
+}
+
+export interface Invitation {
+  user: Person;
+  /** Null if the inviter's account no longer exists. */
+  invitedBy: Person | null;
+  invitedAt: ISODate;
+}
+
+/** An uploaded image: the storage key to send to the API and a URL to preview it. */
+export interface UploadedImage {
+  key: string;
+  url: string;
 }
 
 /** One row of the Communities inbox: a community the viewer belongs to and its single conversation. */
@@ -113,10 +181,19 @@ export interface Message {
   /** Client-generated id used to reconcile optimistic sends with the server copy. */
   clientId: string | null;
   communityId: ID;
-  sender: UserSummary;
+  /**
+   * Position in the conversation (1, 2, 3… with no gaps, in commit order). Null until the server
+   * has accepted the message.
+   */
+  seq: number | null;
+  /** Null when the sender's account no longer exists. */
+  sender: Person | null;
   isMine: boolean;
+  /** Empty once deleted. */
   text: string;
   sentAt: ISODate;
+  /** Set when the message was deleted; it keeps its place in the conversation. */
+  deletedAt: ISODate | null;
   replyTo: { id: ID; senderName: string; text: string } | null;
   attachments: MediaAsset[];
   link: LinkPreview | null;
@@ -288,3 +365,32 @@ export type SavedItem =
   | { kind: 'discover'; savedAt: ISODate; item: DiscoverItem };
 
 export type SaveTarget = { kind: 'post'; id: ID } | { kind: 'discover'; id: ID };
+
+/** The signed-in person's Kinnoc account. `profile` is null until onboarding creates it. */
+export interface Account {
+  id: ID;
+  email: string | null;
+  profile: { username: string; displayName: string } | null;
+}
+
+export interface CreateProfileInput {
+  username: string;
+  displayName: string;
+}
+
+/**
+ * What the connected backend supports. Screens hide controls for anything it does not, rather
+ * than showing actions that would fail.
+ */
+export interface ApiCapabilities {
+  /** Feed, Discover, notifications, stories and saved items. */
+  social: boolean;
+  /** Emoji reactions on messages. */
+  reactions: boolean;
+  /** Photos in chat messages. */
+  messageAttachments: boolean;
+  /** Muting and pinning conversations in the inbox. */
+  inboxPreferences: boolean;
+  /** Headline, location, website and interests on the profile. */
+  profileDetails: boolean;
+}

@@ -21,10 +21,15 @@ interface ChatComposerProps {
   onSend: (text: string, attachmentUris: string[]) => void;
   onTyping?: () => void;
   bottomInset: number;
+  /** False when the backend does not accept photos in messages yet. */
+  allowAttachments?: boolean;
 }
 
+/** The API's limit for one message. */
+const MAX_LENGTH = 4000;
+
 /** Attach, a growing field with emoji, then Photo — replaced by Send once there is something to send. */
-export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, onTyping, bottomInset }: ChatComposerProps) {
+export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, onTyping, bottomInset, allowAttachments = true }: ChatComposerProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
   const [attachMenu, setAttachMenu] = useState(false);
@@ -52,7 +57,7 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
           <Reply size={18} color={colors.primary} strokeWidth={2} />
           <View style={styles.flex}>
             <Text variant="meta" color="text" style={styles.bold}>
-              Replying to {replyTo.isMine ? 'yourself' : replyTo.sender.displayName}
+              Replying to {replyTo.isMine ? 'yourself' : (replyTo.sender?.displayName ?? 'a former member')}
             </Text>
             <Text variant="preview" color="textTertiary" numberOfLines={1}>
               {replyTo.text}
@@ -92,8 +97,8 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
       ) : null}
 
       <View style={styles.row}>
-        <IconButton icon={Plus} label="Attach" size={24} onPress={() => setAttachMenu(true)} />
-        <View style={styles.field}>
+        {allowAttachments ? <IconButton icon={Plus} label="Attach" size={24} onPress={() => setAttachMenu(true)} /> : null}
+        <View style={[styles.field, !allowAttachments && styles.fieldAlone]}>
           <TextInput
             ref={input}
             value={text}
@@ -104,6 +109,7 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
             placeholder={`Message ${communityName}`}
             placeholderTextColor={colors.textTertiary}
             multiline
+            maxLength={MAX_LENGTH}
             style={styles.input}
             accessibilityLabel={`Message ${communityName}`}
             maxFontSizeMultiplier={1.6}
@@ -120,8 +126,10 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
           <Pressable onPress={send} style={styles.send} accessibilityRole="button" accessibilityLabel="Send" pressedOpacity={0.8}>
             <ArrowUp size={22} color={colors.onPrimary} strokeWidth={2.4} />
           </Pressable>
-        ) : (
+        ) : allowAttachments ? (
           <IconButton icon={Camera} label="Take a photo" size={24} onPress={() => void add('camera')} />
+        ) : (
+          <View style={styles.sendPlaceholder} />
         )}
       </View>
 
@@ -170,6 +178,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     paddingLeft: 16,
   },
+  fieldAlone: { marginLeft: space[3] - 4 },
+  sendPlaceholder: { width: 44, height: 44 },
   input: {
     flex: 1,
     fontFamily: fonts.body400,

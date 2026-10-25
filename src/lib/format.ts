@@ -1,4 +1,6 @@
 /** Date and number formatting in the Kinnoc voice: day-first dates, "10:24 AM" times. */
+import { randomUUID } from 'expo-crypto';
+
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -123,4 +125,5 @@ export function initials(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
 }
 
-export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+/** A random UUID (v4): message idempotency keys and unguessable upload names. */
+export const uid = () => randomUUID();

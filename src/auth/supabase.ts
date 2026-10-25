@@ -43,8 +43,9 @@ function toAuthError(error: { code?: string; message: string; status?: number })
   return new AuthError('unknown', 'Something went wrong. Try again.');
 }
 
-export function createSupabaseAuth(url: string, anonKey: string): AuthService {
-  const client: SupabaseClient = createClient(url, anonKey, {
+/** Creates the Supabase client used for sign-in and for uploads to Storage with the user's session. */
+export function createSupabaseClient(url: string, anonKey: string): SupabaseClient {
+  return createClient(url, anonKey, {
     auth: {
       storage: secureStorage,
       autoRefreshToken: true,
@@ -52,7 +53,9 @@ export function createSupabaseAuth(url: string, anonKey: string): AuthService {
       detectSessionInUrl: false,
     },
   });
+}
 
+export function createSupabaseAuth(client: SupabaseClient): AuthService {
   // Refresh tokens only while the app is in the foreground, as Supabase recommends for React Native.
   AppState.addEventListener('change', (state) => {
     if (state === 'active') client.auth.startAutoRefresh();
@@ -90,7 +93,12 @@ export function createSupabaseAuth(url: string, anonKey: string): AuthService {
     async signOut() {
       await client.auth.signOut();
     },
-    async getAccessToken() {
+    async getAccessToken(options) {
+      if (options?.refresh) {
+        const { data, error } = await client.auth.refreshSession();
+        // A refresh can fail offline; the caller then treats the session as still unknown.
+        if (!error) return data.session?.access_token ?? null;
+      }
       const { data } = await client.auth.getSession();
       return data.session?.access_token ?? null;
     },

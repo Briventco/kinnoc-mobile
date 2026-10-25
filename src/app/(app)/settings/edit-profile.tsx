@@ -16,6 +16,7 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { validateName } from '@/features/auth/validation';
 import { useMe, useUpdateProfile } from '@/features/profile/hooks';
+import { api } from '@/services';
 import { colors, fonts, gutter, radius, space } from '@/theme';
 
 const MAX_INTERESTS = 8;
@@ -40,6 +41,8 @@ function EditForm({ profile }: { profile: Profile }) {
     interests: profile.interests,
   });
   const [interest, setInterest] = useState('');
+  /** Headline, location, website and interests are only kept by backends that support them. */
+  const details = api.capabilities.profileDetails;
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -92,60 +95,68 @@ function EditForm({ profile }: { profile: Profile }) {
           </Text>
         </View>
         <TextField label="Name" value={form.displayName} onChangeText={(v) => setForm((f) => ({ ...f, displayName: v }))} error={errors.displayName} autoCapitalize="words" />
-        <TextField label="Role or headline" value={form.headline ?? ''} onChangeText={set('headline')} placeholder="Student, designer, founder…" />
-        <TextField label="Location" value={form.location ?? ''} onChangeText={set('location')} placeholder="City, country" />
+        {details ? (
+          <>
+            <TextField label="Role or headline" value={form.headline ?? ''} onChangeText={set('headline')} placeholder="Student, designer, founder…" />
+            <TextField label="Location" value={form.location ?? ''} onChangeText={set('location')} placeholder="City, country" />
+          </>
+        ) : null}
         <TextField label="Bio" value={form.bio ?? ''} onChangeText={set('bio')} multiline maxLength={280} helper={`${280 - (form.bio?.length ?? 0)} characters left`} />
-        <TextField
-          label="Website"
-          value={form.website ?? ''}
-          onChangeText={set('website')}
-          error={errors.website}
-          keyboardType="url"
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="yoursite.com"
-        />
-        <View style={styles.interests}>
-          <Text variant="label" color="textTertiary">
-            Interests
-          </Text>
-          <View style={styles.tags}>
-            {form.interests.map((i) => (
-              <Pressable
-                key={i}
-                onPress={() => setForm((f) => ({ ...f, interests: f.interests.filter((x) => x !== i) }))}
-                style={styles.tag}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${i}`}
-              >
-                <Text variant="name" style={styles.tagText}>
-                  {i}
+        {details ? (
+          <>
+            <TextField
+              label="Website"
+              value={form.website ?? ''}
+              onChangeText={set('website')}
+              error={errors.website}
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder="yoursite.com"
+            />
+            <View style={styles.interests}>
+              <Text variant="label" color="textTertiary">
+                Interests
+              </Text>
+              <View style={styles.tags}>
+                {form.interests.map((i) => (
+                  <Pressable
+                    key={i}
+                    onPress={() => setForm((f) => ({ ...f, interests: f.interests.filter((x) => x !== i) }))}
+                    style={styles.tag}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Remove ${i}`}
+                  >
+                    <Text variant="name" style={styles.tagText}>
+                      {i}
+                    </Text>
+                    <X size={14} color={colors.textTertiary} strokeWidth={2} />
+                  </Pressable>
+                ))}
+              </View>
+              {form.interests.length < MAX_INTERESTS ? (
+                <View style={styles.addRow}>
+                  <TextInput
+                    value={interest}
+                    onChangeText={setInterest}
+                    placeholder="Add an interest"
+                    placeholderTextColor={colors.textTertiary}
+                    onSubmitEditing={addInterest}
+                    returnKeyType="done"
+                    style={styles.addInput}
+                    accessibilityLabel="Add an interest"
+                    maxLength={32}
+                  />
+                  <Button label="Add" variant="quiet" size="small" onPress={addInterest} disabled={!interest.trim()} />
+                </View>
+              ) : (
+                <Text variant="meta" color="textTertiary">
+                  You can add up to {MAX_INTERESTS} interests.
                 </Text>
-                <X size={14} color={colors.textTertiary} strokeWidth={2} />
-              </Pressable>
-            ))}
-          </View>
-          {form.interests.length < MAX_INTERESTS ? (
-            <View style={styles.addRow}>
-              <TextInput
-                value={interest}
-                onChangeText={setInterest}
-                placeholder="Add an interest"
-                placeholderTextColor={colors.textTertiary}
-                onSubmitEditing={addInterest}
-                returnKeyType="done"
-                style={styles.addInput}
-                accessibilityLabel="Add an interest"
-                maxLength={32}
-              />
-              <Button label="Add" variant="quiet" size="small" onPress={addInterest} disabled={!interest.trim()} />
+              )}
             </View>
-          ) : (
-            <Text variant="meta" color="textTertiary">
-              You can add up to {MAX_INTERESTS} interests.
-            </Text>
-          )}
-        </View>
+          </>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -18,12 +18,28 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || und
 const previewAllowed = __DEV__ || process.env.EXPO_PUBLIC_ALLOW_PREVIEW === 'true';
 
 const apiMode: ApiMode = process.env.EXPO_PUBLIC_API_MODE === 'http' ? 'http' : 'mock';
+
+/**
+ * The Socket.IO endpoint for community chat, derived from the API URL: the server's origin
+ * and `<API prefix>/socket.io`. `https://host/api/v1` → `https://host` + `/api/v1/socket.io`.
+ */
+function socketEndpoint(url: string | undefined) {
+  const match = url?.match(/^(https?:\/\/[^/?#]+)(\/[^?#]*)?$/i);
+  if (!match) return undefined;
+  return { url: match[1], path: `${(match[2] ?? '').replace(/\/+$/, '')}/socket.io` };
+}
 const authMode: AuthMode = supabaseUrl && supabaseAnonKey ? 'supabase' : 'preview';
 
 function collectProblems(): string[] {
   const problems: string[] = [];
   if (apiMode === 'http' && !apiUrl) {
     problems.push('EXPO_PUBLIC_API_MODE is "http" but EXPO_PUBLIC_API_URL is not set.');
+  }
+  if (apiMode === 'http' && apiUrl && !socketEndpoint(apiUrl)) {
+    problems.push('EXPO_PUBLIC_API_URL must be a full URL such as https://kinnoc-api.onrender.com/api/v1.');
+  }
+  if (apiMode === 'http' && apiUrl && !__DEV__ && !apiUrl.startsWith('https://')) {
+    problems.push('EXPO_PUBLIC_API_URL must use https in a release build.');
   }
   if (apiMode === 'mock' && !previewAllowed) {
     problems.push('This release build has no backend configured. Set EXPO_PUBLIC_API_MODE=http and EXPO_PUBLIC_API_URL.');
@@ -40,6 +56,7 @@ function collectProblems(): string[] {
 export const env = {
   apiMode,
   apiUrl,
+  socket: socketEndpoint(apiUrl),
   authMode,
   supabaseUrl,
   supabaseAnonKey,
