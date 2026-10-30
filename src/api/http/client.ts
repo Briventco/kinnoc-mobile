@@ -66,6 +66,19 @@ export function toApiError(status: number, payload: unknown): ApiError {
   );
 }
 
+/**
+ * Waits for the access token, but no longer than a request may take. Supabase makes every caller
+ * wait while it refreshes a session, so a refresh stuck on a bad connection would otherwise leave
+ * screens loading forever instead of failing with a retry.
+ */
+function tokenWithin(promise: Promise<string | null>, ms: number): Promise<string | null> {
+  return new Promise((resolve, reject) => {
+    // A client-side code (not from the API), so the screen can say it was the sign-in, not the request.
+    const timer = setTimeout(() => reject(new ApiError('timeout', 'Signing in took too long', null, {}, 'SESSION_TIMEOUT')), ms);
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 /** Token problems that a refreshed session can fix. */
 const REFRESHABLE = new Set(['AUTH_TOKEN_EXPIRED', 'AUTH_TOKEN_INVALID', 'AUTH_TOKEN_MISSING']);
 
@@ -113,14 +126,14 @@ export function createHttpClient(options: HttpClientOptions) {
   }
 
   async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    const token = await options.getAccessToken();
+    const token = await tokenWithin(options.getAccessToken(), timeoutMs);
     let response = await attempt(method, path, opts, token);
     let payload = response.status === 204 ? null : await readJson(response);
 
     if (response.status === 401 && token) {
       const code = (payload as ErrorEnvelope | null)?.error?.code;
       if (!code || REFRESHABLE.has(code)) {
-        const fresh = await options.getAccessToken({ refresh: true }).catch(() => null);
+        const fresh = await tokenWithin(options.getAccessToken({ refresh: true }), timeoutMs).catch(() => null);
         if (fresh) {
           response = await attempt(method, path, opts, fresh);
           payload = response.status === 204 ? null : await readJson(response);

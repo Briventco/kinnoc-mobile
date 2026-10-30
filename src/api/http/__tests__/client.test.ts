@@ -33,6 +33,22 @@ function setup(replies: Reply[], tokens: (string | null)[] = ['token-1']) {
 const headers = (init: RequestInit) => init.headers as Record<string, string>;
 
 describe('createHttpClient', () => {
+  it('fails with a retryable timeout when the session never yields a token', async () => {
+    jest.useFakeTimers();
+    try {
+      const { fetch, calls } = fakeFetch([{ status: 200, body: { data: {} } }]);
+      // A session refresh stuck on a bad connection: the token never arrives.
+      const getAccessToken = () => new Promise<string | null>(() => {});
+      const client = createHttpClient({ baseUrl: 'https://api.test/api/v1', getAccessToken, onUnauthorized: jest.fn(), fetch, timeoutMs: 15000 });
+      const request = client.post('/users/provision');
+      jest.advanceTimersByTime(15000);
+      await expect(request).rejects.toMatchObject({ code: 'timeout', retryable: true, serverCode: 'SESSION_TIMEOUT' });
+      expect(calls).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('sends the bearer token and unwraps the { data } envelope', async () => {
     const { client, calls } = setup([{ status: 200, body: { data: { id: 'c1' } } }]);
     await expect(client.get('/communities/c1')).resolves.toEqual({ id: 'c1' });

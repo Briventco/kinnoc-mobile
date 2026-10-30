@@ -70,7 +70,7 @@ const SERVER_MESSAGES: Record<string, string> = {
   AUTH_UNAVAILABLE: "We can't check your sign-in right now. Try again in a moment.",
   PROFILE_REQUIRED: 'Finish setting up your profile first.',
   INVITATION_REQUIRED: 'This community is invitation only.',
-  MEMBERSHIP_REQUIRED: 'Only members can see this.',
+  MEMBERSHIP_REQUIRED: 'That’s only for members of this community.',
   INSUFFICIENT_COMMUNITY_ROLE: "Your role in this community doesn't allow that.",
   OWNER_CANNOT_LEAVE: 'Owners can’t leave. Transfer ownership to another member first.',
   ALREADY_MEMBER: 'They are already a member.',
@@ -89,7 +89,16 @@ const SERVER_MESSAGES: Record<string, string> = {
   MESSAGE_NOT_FOUND: 'That message is no longer available.',
   INVALID_REPLY: "You can't reply to that message.",
   USERNAME_TAKEN: 'That username is taken.',
-  RATE_LIMITED: "You're sending messages too quickly. Wait a moment.",
+  RATE_LIMITED: "You're doing that too often. Wait a moment and try again.",
+  POST_NOT_FOUND: "This post isn't available. It may have been deleted.",
+  COMMENT_NOT_FOUND: "That comment isn't available any more.",
+  CONTENT_FORBIDDEN: 'Only the author can change this.',
+  INVALID_MEDIA: "A photo couldn't be attached. Remove it and add it again.",
+  INVALID_PARENT: "You can't reply to that comment any more.",
+  CONFLICT: 'That was already sent. Refresh to see it.',
+  SESSION_TIMEOUT: "We couldn't confirm your sign-in in time. Retry, or sign out and sign back in.",
+  EVENT_NOT_FOUND: "This event isn't available. It may have been withdrawn or never published.",
+  INVALID_CURSOR: 'The list changed. Pull down to refresh it.',
 };
 
 /** Plain-language message for any thrown value. */

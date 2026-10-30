@@ -4,6 +4,7 @@ import type {
   AppNotification,
   Category,
   Comment,
+  CommentInput,
   Community,
   CommunityBrowseFilter,
   CommunityInput,
@@ -23,9 +24,12 @@ import type {
   JoinRequest,
   MembershipStatus,
   Message,
+  MessagePage,
   NotificationPreferences,
   Page,
   Post,
+  PostImage,
+  PostUpdate,
   Profile,
   ProfileUpdate,
   Reaction,
@@ -55,13 +59,28 @@ export interface KinnocApi {
     createProfile(input: CreateProfileInput): Promise<Account>;
   };
   feed: {
+    /** Newest first. */
     list(scope: FeedScope, cursor: string | null): Promise<Page<FeedItem>>;
+    /** One community's posts, newest first. Members-only communities refuse non-members (`MEMBERSHIP_REQUIRED`). */
+    community(ref: string, cursor: string | null): Promise<Page<Post>>;
     get(postId: ID): Promise<Post>;
+    /** Idempotent by `clientId`. */
     create(input: CreatePostInput): Promise<Post>;
+    /** Author only. */
+    update(postId: ID, changes: PostUpdate): Promise<Post>;
+    /** The author, or the community's owners and moderators. */
     remove(postId: ID): Promise<void>;
-    setLiked(postId: ID, liked: boolean): Promise<{ likeCount: number }>;
+    /** Idempotent; returns the server's state. */
+    setLiked(postId: ID, liked: boolean): Promise<{ likeCount: number; likedByMe: boolean }>;
+    /** Top-level comments, oldest first. */
     comments(postId: ID, cursor: string | null): Promise<Page<Comment>>;
-    comment(postId: ID, text: string): Promise<Comment>;
+    /** Replies to a top-level comment, oldest first. */
+    replies(postId: ID, commentId: ID, cursor: string | null): Promise<Page<Comment>>;
+    /** Idempotent by `clientId`. */
+    comment(postId: ID, input: CommentInput): Promise<Comment>;
+    /** Author only. */
+    editComment(postId: ID, commentId: ID, text: string): Promise<Comment>;
+    removeComment(postId: ID, commentId: ID): Promise<void>;
   };
   communities: {
     inbox(): Promise<InboxEntry[]>;
@@ -101,9 +120,9 @@ export interface KinnocApi {
   };
   messages: {
     /** Newest first. `cursor` pages back through older history. Members only. */
-    list(communityId: ID, cursor: string | null): Promise<Page<Message>>;
+    list(communityId: ID, cursor: string | null): Promise<MessagePage>;
     /** Catch-up after a reconnect: messages after `seq`, oldest first; follow `nextCursor` until null. */
-    since(communityId: ID, seq: number, cursor: string | null): Promise<Page<Message>>;
+    since(communityId: ID, seq: number, cursor: string | null): Promise<MessagePage>;
     send(input: SendMessageInput): Promise<Message>;
     /** Sender, owner or moderator. The message keeps its place, without its text. */
     remove(communityId: ID, messageId: ID): Promise<void>;
@@ -112,6 +131,8 @@ export interface KinnocApi {
   media: {
     /** Uploads a local image for a community avatar or cover. */
     uploadCommunityImage(localUri: string): Promise<UploadedImage>;
+    /** Uploads a local image for a post. Resolves only once storage has accepted it. */
+    uploadPostImage(localUri: string): Promise<PostImage>;
   };
   discover: {
     home(): Promise<DiscoverHome>;
@@ -122,7 +143,13 @@ export interface KinnocApi {
     me(): Promise<Profile>;
     get(userId: ID): Promise<Profile>;
     update(changes: ProfileUpdate): Promise<Profile>;
+    /** Uploads a picked image as the caller's profile photo, replacing any current one. */
+    setAvatar(localUri: string): Promise<Profile>;
+    /** Removes the caller's profile photo; their initials are shown instead. */
+    removeAvatar(): Promise<Profile>;
     posts(userId: ID, cursor: string | null): Promise<Page<Post>>;
+    /** Replaces the caller's interests with these catalogue slugs (from `communities.categories`). May be empty. */
+    setInterests(slugs: string[]): Promise<Profile>;
   };
   notifications: {
     list(cursor: string | null): Promise<Page<AppNotification>>;

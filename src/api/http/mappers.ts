@@ -1,24 +1,30 @@
 /**
- * Kinnoc API payloads (see kinnoc-api docs/communities.md and docs/chat.md) and their mapping to
+ * Kinnoc API payloads (see kinnoc-api docs/api-contract.md, docs/communities.md and docs/chat.md) and their mapping to
  * the app's domain types. Every field is mapped explicitly, so a field the API adds later never
  * leaks into screens by accident.
  */
 import type {
   Account,
+  Comment,
   Community,
   CommunityInput,
   CommunityMember,
   CommunityRole,
   CommunityVisibility,
+  EventItem,
   InboxEntry,
   Invitation,
   JoinPolicy,
   JoinRequest,
   MembershipStatus,
   Message,
+  MessagePage,
   Page,
   Person,
+  Post,
   Profile,
+  Receipts,
+  UserSummary,
 } from '../types';
 
 type ApiVisibility = 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
@@ -61,10 +67,50 @@ export interface ApiMessage {
   deletedAt: string | null;
 }
 
+export interface ApiReceipts {
+  deliveredSeq: number;
+  readSeq: number;
+}
+
+export interface ApiMessagePage extends Page<ApiMessage> {
+  /** Absent from APIs older than Delivered and Seen receipts. */
+  receipts?: ApiReceipts | null;
+}
+
 export interface ApiInboxEntry {
   community: ApiCommunity;
   lastMessage: ApiMessage | null;
   unreadCount: number;
+  receipts?: ApiReceipts | null;
+}
+
+export interface ApiPost {
+  id: string;
+  author: ApiPerson;
+  community: { id: string; slug: string; name: string } | null;
+  text: string;
+  media: { url: string; mimeType: string; width: number | null; height: number | null; alt: string | null }[];
+  link: { url: string; domain: string } | null;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+  isMine: boolean;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+export interface ApiComment {
+  id: string;
+  postId: string;
+  parentId: string | null;
+  /** Null once deleted. */
+  author: ApiPerson | null;
+  text: string | null;
+  isMine: boolean;
+  replyCount: number;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
 }
 
 export interface ApiMember extends ApiPerson {
@@ -90,6 +136,8 @@ export interface ApiAccount {
     username: string;
     displayName: string;
     bio: string | null;
+    /** Object key in the avatars bucket; only returned for your own account. */
+    avatarKey?: string | null;
     avatarUrl: string | null;
   } | null;
   interests: { slug: string; name: string }[];
@@ -169,10 +217,20 @@ export function toMessage(m: ApiMessage): Message {
     attachments: [],
     link: null,
     reactions: [],
-    // The server has the message, so it is sent. The API has no read receipts for others.
+    // The server has it. Delivered and Seen come from the conversation's receipts.
     status: 'sent',
   };
 }
+
+const isSeq = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+
+/** Receipt positions, or null when the API sent none (or something unusable). */
+export function toReceipts(r: ApiReceipts | null | undefined): Receipts | null {
+  if (!r || !isSeq(r.deliveredSeq) || !isSeq(r.readSeq)) return null;
+  return { deliveredSeq: r.deliveredSeq, readSeq: r.readSeq };
+}
+
+export const toMessagePage = (page: ApiMessagePage): MessagePage => ({ ...mapPage(page, toMessage), receipts: toReceipts(page.receipts) });
 
 export function toInboxEntry(e: ApiInboxEntry): InboxEntry {
   const m = e.lastMessage;
@@ -189,6 +247,7 @@ export function toInboxEntry(e: ApiInboxEntry): InboxEntry {
         }
       : null,
     unreadCount: e.unreadCount,
+    receipts: toReceipts(e.receipts),
     // Not provided by the API yet.
     hasMention: false,
     isPinned: false,
@@ -196,6 +255,55 @@ export function toInboxEntry(e: ApiInboxEntry): InboxEntry {
     typing: [],
   };
 }
+
+/**
+ * People in the feed. The API never exposes user IDs, so the username (unique) stands in as the
+ * ID; it is used for list keys only.
+ */
+export const toUserSummary = (p: ApiPerson): UserSummary => ({ id: p.username, ...toPerson(p) });
+
+export function toPost(p: ApiPost): Post {
+  return {
+    kind: 'post',
+    id: p.id,
+    author: toUserSummary(p.author),
+    community: p.community ? { id: p.community.id, name: p.community.name } : null,
+    text: p.text,
+    media: p.media.map((m) => ({
+      // Each image appears once per post, so its URL identifies it.
+      id: m.url,
+      kind: 'image',
+      url: m.url,
+      // 0 = size unknown (the uploader did not send one).
+      width: m.width ?? 0,
+      height: m.height ?? 0,
+      alt: m.alt ?? undefined,
+    })),
+    link: p.link ? { url: p.link.url, domain: p.link.domain } : null,
+    createdAt: p.createdAt,
+    editedAt: p.editedAt,
+    likeCount: p.likeCount,
+    commentCount: p.commentCount,
+    likedByMe: p.likedByMe,
+    isMine: p.isMine,
+    // Saved posts and reply previews are not part of the API yet.
+    savedByMe: false,
+    topReply: null,
+  };
+}
+
+export const toComment = (c: ApiComment): Comment => ({
+  id: c.id,
+  postId: c.postId,
+  parentId: c.parentId,
+  author: c.author ? toUserSummary(c.author) : null,
+  text: c.text ?? '',
+  isMine: c.isMine,
+  replyCount: c.replyCount,
+  createdAt: c.createdAt,
+  editedAt: c.editedAt,
+  deletedAt: c.deletedAt,
+});
 
 export const toMember = (m: ApiMember): CommunityMember => ({ ...toPerson(m), role: ROLE[m.role], joinedAt: m.joinedAt });
 
@@ -225,6 +333,7 @@ export function toOwnProfile(a: ApiAccount, communityCount: number): Profile {
     location: null,
     website: null,
     interests: a.interests.map((i) => i.name),
+    interestSlugs: a.interests.map((i) => i.slug),
     followerCount: 0,
     followingCount: 0,
     communityCount,
@@ -234,3 +343,92 @@ export function toOwnProfile(a: ApiAccount, communityCount: number): Profile {
 }
 
 export const mapPage = <A, B>(page: Page<A>, fn: (a: A) => B): Page<B> => ({ items: page.items.map(fn), nextCursor: page.nextCursor });
+
+/** A public event (kinnoc-api docs/events.md). Drafts and archived events never reach the app. */
+export interface ApiEvent {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string | null;
+  description: string | null;
+  coverImageUrl: string | null;
+  organizerName: string;
+  organizerLogoUrl: string | null;
+  category: string;
+  tags: string[];
+  startAt: string;
+  endAt: string | null;
+  timezone: string;
+  isOnline: boolean;
+  venueName: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  onlineEventUrl: string | null;
+  registrationUrl: string | null;
+  registrationDeadline: string | null;
+  capacity: number | null;
+  priceAmount: number | null;
+  currency: string | null;
+  status: 'PUBLISHED' | 'CANCELLED';
+  isPast: boolean;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+}
+
+const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const isInstant = (v: unknown): v is string => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+const httpsUrl = (v: unknown) => (typeof v === 'string' && /^https:\/\//i.test(v) ? v : null);
+const join = (parts: unknown[]) => parts.map(text).filter(Boolean).join(', ') || null;
+
+/** "CAREER" → "Career". */
+const categoryLabel = (c: unknown) => {
+  const t = text(c);
+  return t ? t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, ' ') : null;
+};
+
+/**
+ * Maps an event, or returns null when the payload lacks what a screen needs (an ID, a title and a
+ * valid start), so one malformed record cannot break a list. Optional fields degrade to null.
+ */
+export function toEvent(e: ApiEvent): EventItem | null {
+  if (!e || typeof e !== 'object' || !text(e.id) || !text(e.title) || !isInstant(e.startAt)) return null;
+  const isOnline = e.isOnline === true;
+  const amount = typeof e.priceAmount === 'number' && e.priceAmount >= 0 ? e.priceAmount : null;
+  const currency = text(e.currency);
+  return {
+    kind: 'event',
+    id: e.id,
+    title: e.title.trim(),
+    summary: text(e.summary) ?? '',
+    description: text(e.description),
+    coverUrl: httpsUrl(e.coverImageUrl),
+    // Saving events is not part of the API yet.
+    savedByMe: false,
+    externalUrl: httpsUrl(e.registrationUrl),
+    startsAt: e.startAt,
+    endsAt: isInstant(e.endAt) ? e.endAt : null,
+    timeZone: text(e.timezone),
+    venue: isOnline ? 'Online' : (join([e.venueName, e.city]) ?? 'Venue to be announced'),
+    address: isOnline ? null : join([e.address, e.city, e.state, e.country]),
+    isOnline,
+    onlineUrl: isOnline ? httpsUrl(e.onlineEventUrl) : null,
+    host: text(e.organizerName) ?? 'Kinnoc',
+    hostLogoUrl: httpsUrl(e.organizerLogoUrl),
+    category: categoryLabel(e.category),
+    tags: Array.isArray(e.tags) ? e.tags.filter((t): t is string => typeof t === 'string' && !!t) : [],
+    price: amount !== null && currency ? { amount, currency } : null,
+    capacity: typeof e.capacity === 'number' && e.capacity > 0 ? e.capacity : null,
+    registrationDeadline: isInstant(e.registrationDeadline) ? e.registrationDeadline : null,
+    status: e.status === 'CANCELLED' ? 'cancelled' : 'scheduled',
+    cancellationReason: text(e.cancellationReason),
+    isPast: e.isPast === true,
+  };
+}
+
+/** A page of events without the records that could not be mapped. */
+export function toEventPage(page: Page<ApiEvent>): Page<EventItem> {
+  const items = Array.isArray(page?.items) ? page.items : [];
+  return { items: items.map(toEvent).filter((e): e is EventItem => e !== null), nextCursor: typeof page?.nextCursor === 'string' ? page.nextCursor : null };
+}

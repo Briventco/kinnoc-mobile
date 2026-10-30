@@ -10,7 +10,14 @@ import { unsupported } from '@/api/errors';
 import { createHttpClient } from '@/api/http/client';
 import { createHttpApi } from '@/api/http';
 import { createSocketRealtime } from '@/api/http/socket';
-import { createCommunityImageUploader } from '@/api/http/storage';
+import {
+  AVATAR_BUCKET,
+  AVATAR_LIMITS,
+  COMMUNITY_MEDIA_BUCKET,
+  createImageRemover,
+  createImageUploader,
+  POST_MEDIA_BUCKET,
+} from '@/api/http/storage';
 import { createMockBackend, type MockViewer } from '@/api/mock';
 import { noopRealtime, type RealtimeClient } from '@/api/realtime';
 import { createPreviewAuth } from '@/auth/preview';
@@ -43,9 +50,13 @@ function createBackend(): { api: KinnocApi; realtime: RealtimeClient } {
       getAccessToken,
       onUnauthorized: () => unauthorizedHandler(),
     });
+    const noUpload = () => Promise.reject(unsupported('Image upload'));
     const api = createHttpApi(client, {
       // Images go to Supabase Storage with the user's own session; without Supabase there is no upload.
-      uploadCommunityImage: supabase ? createCommunityImageUploader(supabase) : () => Promise.reject(unsupported('Image upload')),
+      uploadCommunityImage: supabase ? createImageUploader(supabase, COMMUNITY_MEDIA_BUCKET) : noUpload,
+      uploadPostImage: supabase ? createImageUploader(supabase, POST_MEDIA_BUCKET) : noUpload,
+      uploadAvatar: supabase ? createImageUploader(supabase, AVATAR_BUCKET, AVATAR_LIMITS) : noUpload,
+      removeAvatarFile: supabase ? createImageRemover(supabase, AVATAR_BUCKET) : () => Promise.resolve(),
     });
     const realtime = env.socket ? createSocketRealtime({ ...env.socket, getAccessToken, appState: AppState }) : noopRealtime;
     return { api, realtime };

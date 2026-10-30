@@ -9,10 +9,13 @@
  *   npm run test:live
  *
  * Writes test data: it reuses one PRIVATE, invite-only community named below (created on the
- * first run; the API cannot delete communities yet) and sends messages there, deleting them
- * again. Nothing secret is printed.
+ * first run; the API cannot delete communities yet) and sends messages and a post there, deleting
+ * them again (an uploaded test image stays in the uploader's own storage folder if storage refuses
+ * its removal). Nothing secret is printed.
  */
 import { createClient } from '@supabase/supabase-js';
+
+import { isApiError } from '../../errors';
 
 import type { ConversationEvent } from '../../realtime';
 import type { Message } from '../../types';
@@ -47,6 +50,56 @@ function waitFor<T extends ConversationEvent>(events: ConversationEvent[], match
   });
 }
 
+/** Events are public: this part reads only, and needs no test account. */
+(env('KINNOC_LIVE') === '1' && API_URL ? describe : describe.skip)('Kinnoc events API (live, public)', () => {
+  const api = createHttpApi(createHttpClient({ baseUrl: API_URL!, getAccessToken: async () => null, onUnauthorized: () => {}, timeoutMs: 90_000 }), {
+    uploadCommunityImage: () => Promise.reject(new Error('not used')),
+    uploadPostImage: () => Promise.reject(new Error('not used')),
+    uploadAvatar: () => Promise.reject(new Error('not used')),
+    removeAvatarFile: () => Promise.reject(new Error('not used')),
+  });
+
+  beforeAll(async () => {
+    await fetch(API_URL!.replace(/\/api\/v\d+$/, '/')).catch(() => undefined);
+  });
+
+  it('lists upcoming published events, each one reachable by ID and by slug', async () => {
+    const page = await api.discover.list('events', '', null);
+    expect(page.nextCursor === null || typeof page.nextCursor === 'string').toBe(true);
+    for (const event of page.items) {
+      expect(event).toMatchObject({ kind: 'event', status: 'scheduled', isPast: false });
+      if (event.kind === 'event') expect(Number.isNaN(Date.parse(event.startsAt))).toBe(false);
+    }
+    const home = await api.discover.home();
+    // Home shows the soonest events, so each is on the list's first page too.
+    const listed = new Set(page.items.map((e) => e.id));
+    expect([...home.thisWeek, ...home.upcomingEvents].every((e) => listed.has(e.id))).toBe(true);
+    const first = page.items[0];
+    if (!first) return console.warn('No published upcoming events on this API; detail check skipped.');
+    expect(await api.discover.get(first.id)).toMatchObject({ id: first.id, title: first.title });
+  });
+
+  it('pages without repeating events', async () => {
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    for (let i = 0; i < 5; i++) {
+      const page = await api.discover.list('events', '', cursor);
+      for (const e of page.items) {
+        expect(seen.has(e.id)).toBe(false);
+        seen.add(e.id);
+      }
+      cursor = page.nextCursor;
+      if (!cursor) break;
+    }
+  });
+
+  it('searches, and reports an unknown event as not found', async () => {
+    expect(Array.isArray((await api.discover.list('events', 'zzzz-no-such-event', null)).items)).toBe(true);
+    const error = await api.discover.get('no-such-event-slug').catch((e: unknown) => e);
+    expect(isApiError(error, 'EVENT_NOT_FOUND')).toBe(true);
+  });
+});
+
 live('Kinnoc API (live)', () => {
   const supabase = createClient(SUPABASE_URL!, ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
   const getAccessToken = async (options?: { refresh?: boolean }) => {
@@ -56,6 +109,9 @@ live('Kinnoc API (live)', () => {
   const onUnauthorized = jest.fn();
   const api = createHttpApi(createHttpClient({ baseUrl: API_URL!, getAccessToken, onUnauthorized, timeoutMs: 90_000 }), {
     uploadCommunityImage: () => Promise.reject(new Error('not used')),
+    uploadPostImage: () => Promise.reject(new Error('not used')),
+    uploadAvatar: () => Promise.reject(new Error('not used')),
+    removeAvatarFile: () => Promise.reject(new Error('not used')),
   });
   const match = API_URL!.match(/^(https?:\/\/[^/]+)(\/.*)?$/)!;
   const realtime = createSocketRealtime({
@@ -155,6 +211,115 @@ live('Kinnoc API (live)', () => {
 
     unsubscribe();
     expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('returns Delivered and Seen receipts with history and on subscribe', async () => {
+    const history = await api.messages.list(communityId, null);
+    // The test community has one member, so both positions are 0 by the API's rule.
+    expect(history.receipts).toEqual({ deliveredSeq: expect.any(Number), readSeq: expect.any(Number) });
+    const events: ConversationEvent[] = [];
+    const unsubscribe = realtime.subscribe(communityId, (e) => events.push(e));
+    const subscribed = await waitFor(events, (e): e is Extract<ConversationEvent, { type: 'subscribed' }> => e.type === 'subscribed');
+    expect(subscribed.receipts).toEqual({ deliveredSeq: expect.any(Number), readSeq: expect.any(Number) });
+    unsubscribe();
+    const inbox = await api.communities.inbox();
+    expect(inbox.find((e) => e.community.id === communityId)?.receipts).toEqual({ deliveredSeq: expect.any(Number), readSeq: expect.any(Number) });
+  });
+
+  it('loads both feeds and posts, edits, likes, comments on and deletes a community post', async () => {
+    const publicFeed = await api.feed.list('for-you', null);
+    expect(Array.isArray(publicFeed.items)).toBe(true);
+    await api.feed.list('communities', null);
+
+    const clientId = crypto.randomUUID();
+    const input = { clientId, text: `Feed integration test ${new Date().toISOString()}`, communityId, media: [], link: 'https://kinnoc.com' };
+    const post = await api.feed.create(input);
+    let deleted = false;
+    try {
+      expect(post).toMatchObject({ isMine: true, community: { id: communityId }, link: { domain: 'kinnoc.com' } });
+      // Retrying with the same client ID returns the original.
+      expect((await api.feed.create(input)).id).toBe(post.id);
+      expect((await api.feed.community(communityId, null)).items.some((p) => p.id === post.id)).toBe(true);
+      // Members-only community posts never reach the public feed.
+      expect((await api.feed.list('for-you', null)).items.some((p) => p.id === post.id)).toBe(false);
+
+      const edited = await api.feed.update(post.id, { text: 'Edited by the test', link: null });
+      expect(edited).toMatchObject({ text: 'Edited by the test', link: null, editedAt: expect.any(String) });
+
+      expect(await api.feed.setLiked(post.id, true)).toEqual({ likeCount: 1, likedByMe: true });
+      expect(await api.feed.setLiked(post.id, true)).toEqual({ likeCount: 1, likedByMe: true });
+      expect(await api.feed.setLiked(post.id, false)).toEqual({ likeCount: 0, likedByMe: false });
+
+      const top = await api.feed.comment(post.id, { clientId: crypto.randomUUID(), text: 'Top-level comment', parentId: null });
+      const reply = await api.feed.comment(post.id, { clientId: crypto.randomUUID(), text: 'A reply', parentId: top.id });
+      await expect(api.feed.comment(post.id, { clientId: crypto.randomUUID(), text: 'Too deep', parentId: reply.id })).rejects.toMatchObject({
+        serverCode: 'INVALID_PARENT',
+      });
+      expect((await api.feed.replies(post.id, top.id, null)).items.map((c) => c.id)).toEqual([reply.id]);
+      expect(await api.feed.editComment(post.id, reply.id, 'Edited reply')).toMatchObject({ text: 'Edited reply', editedAt: expect.any(String) });
+      expect((await api.feed.get(post.id)).commentCount).toBe(2);
+      await api.feed.removeComment(post.id, top.id);
+      // A deleted comment with replies stays listed as a placeholder.
+      expect((await api.feed.comments(post.id, null)).items[0]).toMatchObject({ id: top.id, author: null, deletedAt: expect.any(String) });
+
+      // A key that was never uploaded is refused.
+      await expect(
+        api.feed.create({ ...input, clientId: crypto.randomUUID(), media: [{ key: 'not-mine/none.jpg', url: '', width: 1, height: 1 }] }),
+      ).rejects.toMatchObject({ serverCode: 'INVALID_MEDIA' });
+
+      await api.feed.remove(post.id);
+      deleted = true;
+      await expect(api.feed.get(post.id)).rejects.toMatchObject({ serverCode: 'POST_NOT_FOUND' });
+    } finally {
+      if (!deleted) await api.feed.remove(post.id).catch(() => undefined);
+    }
+  });
+
+  it('attaches an image uploaded to post media with the user’s own session', async () => {
+    const { data } = await supabase.auth.getSession();
+    const key = `${data.session!.user.id}/${crypto.randomUUID()}.jpg`;
+    // The smallest valid JPEG (1×1 pixel).
+    const jpeg = Uint8Array.from(
+      atob(
+        '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+      ),
+      (c) => c.charCodeAt(0),
+    );
+    const upload = await supabase.storage.from('post-media').upload(key, jpeg, { contentType: 'image/jpeg', upsert: false });
+    expect(upload.error).toBeNull();
+    try {
+      const post = await api.feed.create({
+        clientId: crypto.randomUUID(),
+        text: 'Image integration test',
+        communityId,
+        media: [{ key, url: '', width: 1, height: 1 }],
+        link: null,
+      });
+      expect(post.media).toEqual([expect.objectContaining({ url: expect.stringContaining(key), width: 1, height: 1 })]);
+      await api.feed.remove(post.id);
+    } finally {
+      await supabase.storage.from('post-media').remove([key]);
+    }
+  });
+
+  it('lists the user’s posts on their profile, by account and by username', async () => {
+    const account = await api.account.load();
+    const post = await api.feed.create({ clientId: crypto.randomUUID(), text: 'Profile posts test', communityId, media: [], link: null });
+    try {
+      const mine = await api.profile.posts(account.id, null);
+      expect(mine.items[0]).toMatchObject({ id: post.id, isMine: true });
+      const byUsername = await api.profile.posts(account.profile!.username, null);
+      expect(byUsername.items.some((p) => p.id === post.id)).toBe(true);
+      await api.feed.remove(post.id);
+      expect((await api.profile.posts(account.id, null)).items.some((p) => p.id === post.id)).toBe(false);
+    } finally {
+      await api.feed.remove(post.id).catch(() => undefined);
+    }
+  });
+
+  it('reports a deleted or unknown post as gone', async () => {
+    const error = await api.feed.get('00000000-0000-4000-8000-000000000000').catch((e: unknown) => e);
+    expect(isApiError(error, 'POST_NOT_FOUND')).toBe(true);
   });
 
   it('refuses invalid input with field errors', async () => {

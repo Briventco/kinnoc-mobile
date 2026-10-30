@@ -1,4 +1,5 @@
-import { QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
+import { AppState, Platform } from 'react-native';
 
 import { ApiError } from '@/api/errors';
 import type { CommunityBrowseFilter, DiscoverFilter, FeedScope, MembershipStatus } from '@/api/types';
@@ -14,6 +15,15 @@ export const queryClient = new QueryClient({
     mutations: { retry: false },
   },
 });
+
+// React Native has no window focus: refetch stale queries when the app returns to the foreground,
+// so a reopened app does not show what it had when it was put away.
+if (Platform.OS !== 'web') {
+  focusManager.setEventListener((setFocused) => {
+    const subscription = AppState.addEventListener('change', (state) => setFocused(state === 'active'));
+    return () => subscription.remove();
+  });
+}
 
 /** Every cache key in one place, so invalidation stays consistent. */
 export const keys = {
@@ -31,6 +41,9 @@ export const keys = {
   joinRequests: (id: string) => ['community', id, 'join-requests'] as const,
   invitations: (id: string) => ['community', id, 'invitations'] as const,
   messages: (communityId: string) => ['messages', communityId] as const,
+  receipts: (communityId: string) => ['receipts', communityId] as const,
+  communityPosts: (ref: string) => ['feed', 'community', ref] as const,
+  replies: (postId: string, commentId: string) => ['post', postId, 'comments', commentId, 'replies'] as const,
   discoverHome: ['discover', 'home'] as const,
   discoverList: (filter: DiscoverFilter, q: string) => ['discover', 'list', filter, q] as const,
   discoverAll: ['discover'] as const,

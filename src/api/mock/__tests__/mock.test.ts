@@ -55,4 +55,30 @@ describe('mock backend', () => {
     const latest = await api.messages.list('c_tech', null);
     expect(latest.items.find((m) => m.id === sent.id)).toMatchObject({ text: '', deletedAt: expect.any(String) });
   });
+
+  it('creates posts idempotently and supports one level of replies', async () => {
+    const input = { clientId: 'post-1', text: 'Hello from the mock', communityId: null, media: [], link: 'https://kinnoc.com' };
+    const post = await api.feed.create(input);
+    expect(await api.feed.create(input)).toMatchObject({ id: post.id });
+    expect(post.link).toEqual({ url: 'https://kinnoc.com', domain: 'kinnoc.com' });
+
+    const top = await api.feed.comment(post.id, { clientId: 'cm-1', text: 'First', parentId: null });
+    const reply = await api.feed.comment(post.id, { clientId: 'cm-2', text: 'Reply', parentId: top.id });
+    await expect(api.feed.comment(post.id, { clientId: 'cm-3', text: 'Too deep', parentId: reply.id })).rejects.toMatchObject({ serverCode: 'INVALID_PARENT' });
+    expect((await api.feed.get(post.id)).commentCount).toBe(2);
+
+    // A deleted comment with replies stays as a placeholder.
+    await api.feed.removeComment(post.id, top.id);
+    const comments = await api.feed.comments(post.id, null);
+    expect(comments.items[0]).toMatchObject({ id: top.id, text: '', author: null, deletedAt: expect.any(String) });
+    expect((await api.feed.replies(post.id, top.id, null)).items.map((c) => c.id)).toEqual([reply.id]);
+  });
+
+  it('sets and removes the profile photo, on the profile and on your posts', async () => {
+    const post = await api.feed.create({ clientId: 'photo-test', text: 'Hello', communityId: null, media: [], link: null });
+    const me = await api.profile.setAvatar('file:///photo.jpg');
+    expect(me.avatarUrl).toBe('file:///photo.jpg');
+    expect((await api.feed.get(post.id)).author.avatarUrl).toBe('file:///photo.jpg');
+    expect((await api.profile.removeAvatar()).avatarUrl).toBeNull();
+  });
 });

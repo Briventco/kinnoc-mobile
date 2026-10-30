@@ -11,6 +11,7 @@ import type { KinnocApi } from '../contract';
 import { ApiError } from '../errors';
 import type { ConversationEvent, RealtimeClient } from '../realtime';
 import type {
+  Comment,
   Community,
   CommunityMember,
   CommunityRole,
@@ -93,12 +94,23 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     state.joinRequests[c.id] = c.joinPolicy === 'approval' && c.role === 'owner' ? [{ user: people[people.length - 1], requestedAt: new Date(Date.now() - 3_600_000).toISOString() }] : [];
     state.invitations[c.id] = [];
   });
+  /** Idempotency: client IDs already used for posts and comments. */
+  const postsByClientId = new Map<string, string>();
+  const commentsByClientId = new Map<string, string>();
+  // Sample comments are stored without their post ID.
+  for (const [postId, list] of Object.entries(state.comments)) list.forEach((c) => (c.postId = postId));
   const listeners = new Map<string, Set<(e: ConversationEvent) => void>>();
   const emit = (communityId: string, event: ConversationEvent) =>
     listeners.get(communityId)?.forEach((fn) => fn(event));
 
   // The signed-in preview name is shown until the profile is edited here.
   let profileEdited = false;
+  /** The mock keeps the picked file's local URI as the photo, on the profile and on your posts. */
+  const setMyAvatar = (uri: string | null) => {
+    state.profile = { ...state.profile, avatarUrl: uri };
+    for (const post of state.posts) if (post.author.id === fx.ME_ID) post.author = { ...post.author, avatarUrl: uri };
+  };
+
   const me = (): Profile => {
     const viewer = getViewer();
     if (!viewer) return state.profile;
@@ -172,11 +184,14 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
 
   const api: KinnocApi = {
     capabilities: {
+      feed: true,
       social: true,
+      discoverKinds: ['event', 'opportunity', 'resource'],
       reactions: true,
       messageAttachments: true,
       inboxPreferences: true,
       profileDetails: true,
+      interestCatalogue: false,
     },
     account: {
       async load() {
@@ -191,7 +206,11 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     media: {
       async uploadCommunityImage(localUri) {
         await delay(600);
-        return { key: localUri, url: localUri };
+        return { key: localUri, url: localUri, width: 1200, height: 900 };
+      },
+      async uploadPostImage(localUri) {
+        await delay(600);
+        return { key: localUri, url: localUri, width: 1200, height: 900 };
       },
     },
     feed: {
@@ -210,24 +229,33 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         const page = paginate(items, cursor, 6);
         return clone({ ...page, items: page.items.map((i) => (i.kind === 'post' ? withSaved(i) : i)) });
       },
+      async community(ref, cursor) {
+        await delay();
+        const c = findCommunity(ref);
+        if (c.visibility !== 'public' || c.joinPolicy !== 'open') assertMember(c);
+        return clone(paginate(state.posts.filter((p) => p.community?.id === c.id).map(withSaved), cursor, 10));
+      },
       async get(id) {
         await delay();
         return clone(withSaved(findPost(id)));
       },
-      async create({ text, communityId, mediaUris }) {
+      async create({ clientId, text, communityId, media, link }) {
         await delay(600);
-        if (!text.trim() && mediaUris.length === 0) {
-          throw new ApiError('validation', 'Write something or add a photo', 422, { text: 'Write something or add a photo.' });
-        }
+        const existing = postsByClientId.get(clientId);
+        if (existing) return clone(withSaved(findPost(existing)));
+        if (!text.trim()) throw new ApiError('validation', 'Write something first', 400, { text: 'Write something first.' }, 'VALIDATION_FAILED');
         const c = communityId ? findCommunity(communityId) : null;
+        if (c) assertMember(c);
         const post: Post = {
           kind: 'post',
           id: `p_${Date.now()}`,
           author: meSummary(),
           community: c ? { id: c.id, name: c.name } : null,
           text: text.trim(),
-          media: mediaUris.map((uri, i) => ({ id: `media_${Date.now()}_${i}`, kind: 'image', url: uri, width: 1200, height: 900 })),
+          media: media.map((m) => ({ id: m.key, kind: 'image', url: m.url, width: m.width, height: m.height })),
+          link: link ? { url: link, domain: link.replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0] } : null,
           createdAt: new Date().toISOString(),
+          editedAt: null,
           likeCount: 0,
           commentCount: 0,
           likedByMe: false,
@@ -236,12 +264,22 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
           isMine: true,
         };
         state.posts.unshift(post);
+        postsByClientId.set(clientId, post.id);
         return clone(post);
+      },
+      async update(id, { text, link }) {
+        await delay();
+        const post = findPost(id);
+        if (!post.isMine) throw new ApiError('forbidden', 'Only the author can edit this post', 403, {}, 'CONTENT_FORBIDDEN');
+        if (text !== undefined) post.text = text.trim();
+        if (link !== undefined) post.link = link ? { url: link, domain: link.replace(/^https?:\/\/(www\.)?/i, '').split(/[/?#]/)[0] } : null;
+        post.editedAt = new Date().toISOString();
+        return clone(withSaved(post));
       },
       async remove(id) {
         await delay();
         const post = findPost(id);
-        if (!post.isMine) throw new ApiError('forbidden', 'You can only delete your own posts', 403);
+        if (!post.isMine) throw new ApiError('forbidden', 'You can only delete your own posts', 403, {}, 'CONTENT_FORBIDDEN');
         state.posts = state.posts.filter((p) => p.id !== id);
       },
       async setLiked(id, liked) {
@@ -251,21 +289,71 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
           post.likedByMe = liked;
           post.likeCount += liked ? 1 : -1;
         }
-        return { likeCount: post.likeCount };
+        return { likeCount: post.likeCount, likedByMe: post.likedByMe };
       },
       async comments(id, cursor) {
         await delay();
         findPost(id);
-        return clone(paginate(state.comments[id] ?? [], cursor, 20));
+        const top = (state.comments[id] ?? []).filter((c) => !c.parentId && (!c.deletedAt || c.replyCount > 0));
+        return clone(paginate(top, cursor, 20));
       },
-      async comment(id, text) {
+      async replies(id, commentId, cursor) {
+        await delay();
+        findPost(id);
+        const replies = (state.comments[id] ?? []).filter((c) => c.parentId === commentId && !c.deletedAt);
+        return clone(paginate(replies, cursor, 20));
+      },
+      async comment(id, { clientId, text, parentId }) {
         await delay(400);
         const post = findPost(id);
-        if (!text.trim()) throw new ApiError('validation', 'Write a reply first', 422);
-        const c = { id: `cm_${Date.now()}`, author: meSummary(), text: text.trim(), createdAt: new Date().toISOString() };
-        (state.comments[id] ??= []).push(c);
+        const list = (state.comments[id] ??= []);
+        const existing = commentsByClientId.get(clientId);
+        if (existing) return clone(list.find((c) => c.id === existing)!);
+        if (!text.trim()) throw new ApiError('validation', 'Write a reply first', 400, {}, 'VALIDATION_FAILED');
+        const parent = parentId ? list.find((c) => c.id === parentId) : null;
+        if (parentId && (!parent || parent.parentId || parent.deletedAt)) throw new ApiError('validation', 'Invalid parent', 400, {}, 'INVALID_PARENT');
+        const c: Comment = {
+          id: `cm_${Date.now()}`,
+          postId: id,
+          parentId,
+          author: meSummary(),
+          text: text.trim(),
+          isMine: true,
+          replyCount: 0,
+          createdAt: new Date().toISOString(),
+          editedAt: null,
+          deletedAt: null,
+        };
+        list.push(c);
+        if (parent) parent.replyCount += 1;
+        commentsByClientId.set(clientId, c.id);
         post.commentCount += 1;
         return clone(c);
+      },
+      async editComment(id, commentId, text) {
+        await delay();
+        const c = (state.comments[id] ?? []).find((x) => x.id === commentId && !x.deletedAt);
+        if (!c) throw new ApiError('not_found', 'Comment not found', 404, {}, 'COMMENT_NOT_FOUND');
+        if (!c.isMine) throw new ApiError('forbidden', 'Only the author can edit this comment', 403, {}, 'CONTENT_FORBIDDEN');
+        c.text = text.trim();
+        c.editedAt = new Date().toISOString();
+        return clone(c);
+      },
+      async removeComment(id, commentId) {
+        await delay();
+        const post = findPost(id);
+        const list = state.comments[id] ?? [];
+        const c = list.find((x) => x.id === commentId && !x.deletedAt);
+        if (!c) return;
+        if (!c.isMine && !post.isMine) throw new ApiError('forbidden', 'Not allowed', 403, {}, 'CONTENT_FORBIDDEN');
+        c.deletedAt = new Date().toISOString();
+        c.text = '';
+        c.author = null;
+        if (c.parentId) {
+          const parent = list.find((x) => x.id === c.parentId);
+          if (parent) parent.replyCount -= 1;
+        }
+        post.commentCount -= 1;
       },
     },
 
@@ -281,6 +369,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
               community: summary(c),
               lastMessage: last
                 ? {
+                    seq: last.seq,
                     senderName: last.isMine ? 'You' : (last.sender?.displayName.split(' ')[0] ?? 'Former member'),
                     isMine: last.isMine,
                     text: last.text,
@@ -289,6 +378,8 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
                   }
                 : null,
               unreadCount: c.unreadCount,
+              // Sample messages carry their own status instead of receipt positions.
+              receipts: null,
               hasMention: c.hasMention,
               isPinned: c.isPinned,
               isMuted: c.isMuted,
@@ -514,13 +605,13 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         await delay();
         assertMember(findCommunity(communityId));
         const newestFirst = [...(state.messages[communityId] ?? [])].reverse();
-        return clone(paginate(newestFirst, cursor, 15));
+        return clone({ ...paginate(newestFirst, cursor, 15), receipts: null });
       },
       async since(communityId, seq, cursor) {
         await delay(150);
         assertMember(findCommunity(communityId));
         const newer = (state.messages[communityId] ?? []).filter((m) => (m.seq ?? 0) > seq);
-        return clone(paginate(newer, cursor, 50));
+        return clone({ ...paginate(newer, cursor, 50), receipts: null });
       },
       async remove(communityId, messageId) {
         await delay(250);
@@ -630,6 +721,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
           bio: null,
           website: null,
           interests: [],
+          interestSlugs: [],
           followerCount: 0,
           followingCount: 0,
           communityCount: 0,
@@ -644,9 +736,27 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         profileEdited = true;
         return api.profile.me();
       },
+      async setAvatar(localUri) {
+        await delay(700);
+        setMyAvatar(localUri);
+        return api.profile.me();
+      },
+      async removeAvatar() {
+        await delay(400);
+        setMyAvatar(null);
+        return api.profile.me();
+      },
       async posts(userId, cursor) {
         await delay();
         return clone(paginate(state.posts.filter((p) => p.author.id === userId).map(withSaved), cursor, 10));
+      },
+      async setInterests(slugs) {
+        await delay(400);
+        const catalogue = await api.communities.categories();
+        const picked = slugs.map((slug) => catalogue.find((c) => c.slug === slug)).filter((c) => !!c);
+        state.profile = { ...state.profile, interests: picked.map((c) => c.name), interestSlugs: picked.map((c) => c.slug) };
+        profileEdited = true;
+        return api.profile.me();
       },
     },
 

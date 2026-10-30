@@ -34,7 +34,10 @@ export interface Profile extends UserSummary {
   location: string | null;
   bio: string | null;
   website: string | null;
+  /** Interest names, as shown. */
   interests: string[];
+  /** Their catalogue slugs, in the same order, where the backend has a catalogue (else empty). */
+  interestSlugs: string[];
   followerCount: number;
   followingCount: number;
   communityCount: number;
@@ -153,6 +156,8 @@ export interface InboxEntry {
     sentAt: ISODate;
   } | null;
   unreadCount: number;
+  /** Delivered and Seen positions of the conversation; null when the backend does not provide them. */
+  receipts: Receipts | null;
   hasMention: boolean;
   isPinned: boolean;
   isMuted: boolean;
@@ -176,7 +181,27 @@ export interface LinkPreview {
   isVideo: boolean;
 }
 
-export type DeliveryStatus = 'sending' | 'sent' | 'read' | 'failed';
+/**
+ * For the viewer's own messages: `sent` (the server has it, one tick), `delivered` (every other
+ * member's app has it, two grey ticks), `read` (every other member has read it: Seen).
+ */
+export type DeliveryStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
+
+/**
+ * A conversation's aggregate receipt positions, across its other active members: every message
+ * with `seq <= deliveredSeq` has reached everyone, every one with `seq <= readSeq` has been read
+ * by everyone. Both are 0 while the community has fewer than two members. Individual members'
+ * positions are never exposed.
+ */
+export interface Receipts {
+  deliveredSeq: number;
+  readSeq: number;
+}
+
+/** A page of conversation history with the receipt positions at the time it was fetched. */
+export interface MessagePage extends Page<Message> {
+  receipts: Receipts | null;
+}
 
 export interface Message {
   id: ID;
@@ -200,7 +225,10 @@ export interface Message {
   attachments: MediaAsset[];
   link: LinkPreview | null;
   reactions: Reaction[];
-  /** Only meaningful for the viewer's own messages. */
+  /**
+   * Only meaningful for the viewer's own messages. The server copy is `sent`; Delivered and Seen
+   * come from the conversation's `Receipts` (see `deliveryStatus`).
+   */
   status: DeliveryStatus;
 }
 
@@ -213,11 +241,29 @@ export interface SendMessageInput {
   attachmentUris: string[];
 }
 
+/** A comment on a post, or a reply to one. Replies go one level deep. */
 export interface Comment {
   id: ID;
-  author: UserSummary;
+  postId: ID;
+  /** The top-level comment this replies to; null for a top-level comment. */
+  parentId: ID | null;
+  /** Null once deleted. */
+  author: UserSummary | null;
+  /** Empty once deleted. */
   text: string;
+  isMine: boolean;
+  /** Visible replies (top-level comments only). */
+  replyCount: number;
   createdAt: ISODate;
+  editedAt: ISODate | null;
+  /** A deleted top-level comment stays listed, without its text, while it has replies. */
+  deletedAt: ISODate | null;
+}
+
+export interface PostLink {
+  url: string;
+  /** Host name for display, e.g. `kinnoc.com`. */
+  domain: string;
 }
 
 export interface Post {
@@ -227,8 +273,12 @@ export interface Post {
   community: Pick<CommunitySummary, 'id' | 'name'> | null;
   text: string;
   media: MediaAsset[];
+  link: PostLink | null;
   createdAt: ISODate;
+  /** Set when the author changed the text or link. */
+  editedAt: ISODate | null;
   likeCount: number;
+  /** Comments and replies, not counting deleted ones. */
   commentCount: number;
   likedByMe: boolean;
   savedByMe: boolean;
@@ -251,10 +301,39 @@ export interface CommunityUpdate {
 export type FeedItem = Post | CommunityUpdate;
 export type FeedScope = 'for-you' | 'following' | 'communities';
 
+/** An image uploaded for a post, with the size it was uploaded at. */
+export interface PostImage extends UploadedImage {
+  width: number;
+  height: number;
+}
+
 export interface CreatePostInput {
+  /**
+   * Idempotency key: the same for every retry of one post, so a retry after a lost response
+   * returns the original instead of a duplicate; new for a new post.
+   */
+  clientId: string;
   text: string;
+  /** Null for the general feed. */
   communityId: ID | null;
-  mediaUris: string[];
+  /** Up to four images, already uploaded with `media.uploadPostImage`, in order. */
+  media: PostImage[];
+  /** One absolute http(s) URL, or null. */
+  link: string | null;
+}
+
+/** Author only. Media and community cannot change; a null link removes it. */
+export interface PostUpdate {
+  text?: string;
+  link?: string | null;
+}
+
+export interface CommentInput {
+  /** Idempotency key, as for posts. */
+  clientId: string;
+  text: string;
+  /** A top-level comment of the same post, to reply to it. */
+  parentId: ID | null;
 }
 
 export type OpportunityType = 'job' | 'internship' | 'scholarship' | 'hackathon' | 'programme';
@@ -275,9 +354,31 @@ export interface EventItem extends DiscoverBase {
   kind: 'event';
   startsAt: ISODate;
   endsAt: ISODate | null;
+  /** IANA zone the event happens in (`Africa/Lagos`); times are shown in it. Null = the device's zone. */
+  timeZone: string | null;
+  /** Short place for rows: "Main Auditorium, Osogbo", or "Online". */
   venue: string;
+  /** Full address for the detail screen: "Osogbo Campus, Osogbo, Osun, NG". */
+  address: string | null;
   isOnline: boolean;
+  /** Link to join an online event. */
+  onlineUrl: string | null;
   host: string;
+  hostLogoUrl: string | null;
+  /** Full text, newlines kept. Falls back to the summary when absent. */
+  description: string | null;
+  /** "Conference", "Workshop"… */
+  category: string | null;
+  tags: string[];
+  /** Null = no price given (not the same as free, which is amount 0). */
+  price: { amount: number; currency: string } | null;
+  capacity: number | null;
+  registrationDeadline: ISODate | null;
+  /** Cancelled events stay reachable by link, so shared links can explain it. */
+  status: 'scheduled' | 'cancelled';
+  cancellationReason: string | null;
+  /** Ended: its end, or its start when it has no end, has passed. */
+  isPast: boolean;
 }
 
 export interface OpportunityItem extends DiscoverBase {
@@ -385,14 +486,20 @@ export interface CreateProfileInput {
  * than showing actions that would fail.
  */
 export interface ApiCapabilities {
-  /** Feed, Discover, notifications, stories and saved items. */
+  /** Posts, likes and comments: the public and communities feeds and community posts. */
+  feed: boolean;
+  /** Following people (and the Following feed), notifications, stories and saved items. */
   social: boolean;
+  /** What Discover can list. Kinds left out get no tab. */
+  discoverKinds: DiscoverItem['kind'][];
   /** Emoji reactions on messages. */
   reactions: boolean;
   /** Photos in chat messages. */
   messageAttachments: boolean;
   /** Muting and pinning conversations in the inbox. */
   inboxPreferences: boolean;
-  /** Headline, location, website and interests on the profile. */
+  /** Headline, location, website and free-text interests on the profile. */
   profileDetails: boolean;
+  /** Interests chosen from the backend's catalogue (`profile.setInterests`). */
+  interestCatalogue: boolean;
 }

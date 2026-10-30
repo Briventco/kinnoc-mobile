@@ -1,6 +1,6 @@
 import type { Socket } from 'socket.io-client';
 
-import type { ConversationEvent } from '../../realtime';
+import type { ConversationEvent, RealtimeClient } from '../../realtime';
 import { apiMessage } from '../__fixtures__/payloads';
 import { createSocketRealtime } from '../socket';
 
@@ -15,6 +15,8 @@ class FakeSocket {
   connectCalls = 0;
   /** What the server answers to `subscribe`. */
   subscribeAck: (communityId: string) => unknown = () => ({ ok: true, data: { lastSeq: 42 } });
+  /** What the server answers to `delivered`; a promise lets a test hold the answer back. */
+  deliveredAck: (payload: { communityId: string; seq: number }) => unknown = ({ communityId }) => ({ ok: true, data: { communityId } });
 
   constructor(public options: { auth: (cb: (data: object) => void) => void }) {}
 
@@ -37,9 +39,14 @@ class FakeSocket {
   timeout() {
     return this;
   }
-  async emitWithAck(event: string, payload: { communityId: string }) {
+  async emitWithAck(event: string, payload: { communityId: string; seq?: number }) {
     this.emitted.push({ event, payload });
+    if (event === 'delivered') return this.deliveredAck(payload as { communityId: string; seq: number });
     return this.subscribeAck(payload.communityId);
+  }
+  /** `delivered` acknowledgements sent so far. */
+  delivered() {
+    return this.emitted.filter((e) => e.event === 'delivered').map((e) => e.payload);
   }
   connect() {
     this.connectCalls += 1;
@@ -64,6 +71,8 @@ class FakeSocket {
 
 const COMMUNITY = '0b0f4f5e-6d43-4a39-9f0e-1f8b9d6a0c11';
 const flush = () => new Promise<void>((r) => setImmediate(() => r()));
+/** Every client a test creates, closed afterwards so no timer outlives its test. */
+const created: RealtimeClient[] = [];
 
 function setup() {
   const sockets: FakeSocket[] = [];
@@ -88,11 +97,15 @@ function setup() {
       },
     },
   });
+  created.push(realtime);
   const events: ConversationEvent[] = [];
   return { realtime, sockets, events, getAccessToken, appListeners, listen: (e: ConversationEvent) => events.push(e) };
 }
 
-afterEach(() => jest.useRealTimers());
+afterEach(() => {
+  created.splice(0).forEach((r) => r.reset());
+  jest.useRealTimers();
+});
 
 describe('createSocketRealtime', () => {
   it('connects on first subscribe with the token in the auth payload, then subscribes', async () => {
@@ -105,7 +118,16 @@ describe('createSocketRealtime', () => {
     await flush();
     expect(realtime.status()).toBe('connected');
     expect(sockets[0].emitted).toContainEqual({ event: 'subscribe', payload: { communityId: COMMUNITY } });
-    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 42 });
+    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 42, receipts: null });
+  });
+
+  it('passes on the receipts in the subscribe acknowledgement', async () => {
+    const { realtime, sockets, events, listen } = setup();
+    realtime.subscribe(COMMUNITY, listen);
+    sockets[0].subscribeAck = (communityId) => ({ ok: true, data: { communityId, lastSeq: 42, receipts: { deliveredSeq: 41, readSeq: 40 } } });
+    await sockets[0].open();
+    await flush();
+    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 42, receipts: { deliveredSeq: 41, readSeq: 40 } });
   });
 
   it('gives a second listener of the same community its own catch-up point', async () => {
@@ -116,7 +138,7 @@ describe('createSocketRealtime', () => {
     sockets[0].subscribeAck = () => ({ ok: true, data: { lastSeq: 60 } });
     realtime.subscribe(COMMUNITY, listen);
     await flush();
-    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 60 });
+    expect(events).toContainEqual({ type: 'subscribed', lastSeq: 60, receipts: null });
   });
 
   it('maps server events for the subscribed community only', async () => {
@@ -127,11 +149,16 @@ describe('createSocketRealtime', () => {
     sockets[0].receive('message', { communityId: 'another', message: apiMessage({ seq: 1 }) });
     sockets[0].receive('message:deleted', { communityId: COMMUNITY, messageId: 'm1' });
     sockets[0].receive('read', { communityId: COMMUNITY, lastReadSeq: 43 });
+    sockets[0].receive('receipts', { communityId: COMMUNITY, deliveredSeq: 43, readSeq: 41 });
+    sockets[0].receive('receipts', { communityId: 'another', deliveredSeq: 1, readSeq: 1 });
+    // Malformed receipts are ignored rather than shown.
+    sockets[0].receive('receipts', { communityId: COMMUNITY, deliveredSeq: null, readSeq: 41 });
     sockets[0].receive('subscription:ended', { communityId: COMMUNITY, reason: 'membership-ended' });
     expect(events.filter((e) => e.type !== 'subscribed')).toEqual([
       { type: 'message', message: expect.objectContaining({ seq: 43, status: 'sent' }) },
       { type: 'deleted', messageId: 'm1' },
       { type: 'read', communityId: COMMUNITY, lastReadSeq: 43 },
+      { type: 'receipts', receipts: { deliveredSeq: 43, readSeq: 41 } },
       { type: 'ended' },
     ]);
   });
@@ -157,8 +184,8 @@ describe('createSocketRealtime', () => {
     await sockets[0].open();
     await flush();
     expect(events.filter((e) => e.type === 'subscribed')).toEqual([
-      { type: 'subscribed', lastSeq: 42 },
-      { type: 'subscribed', lastSeq: 50 },
+      { type: 'subscribed', lastSeq: 42, receipts: null },
+      { type: 'subscribed', lastSeq: 50, receipts: null },
     ]);
   });
 
@@ -265,5 +292,127 @@ describe('createSocketRealtime', () => {
     // The next subscription starts a new connection.
     realtime.subscribe(COMMUNITY, listen);
     expect(sockets).toHaveLength(2);
+  });
+
+  describe('delivered receipts', () => {
+    const live = (s: FakeSocket, seq: number, over: Record<string, unknown> = {}) =>
+      s.receive('message', { communityId: COMMUNITY, message: apiMessage({ id: `m${seq}`, seq, ...over }) });
+
+    it('acknowledges live messages from others once per batch, with the highest seq received', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      live(sockets[0], 43);
+      live(sockets[0], 45);
+      live(sockets[0], 44);
+      expect(sockets[0].delivered()).toEqual([]);
+      jest.advanceTimersByTime(500);
+      expect(sockets[0].delivered()).toEqual([{ communityId: COMMUNITY, seq: 45 }]);
+    });
+
+    it('does not acknowledge the viewer’s own messages', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      live(sockets[0], 43, { isMine: true });
+      jest.advanceTimersByTime(1000);
+      expect(sockets[0].delivered()).toEqual([]);
+    });
+
+    it('ignores duplicate and older deliveries once acknowledged', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      live(sockets[0], 43);
+      jest.advanceTimersByTime(500);
+      await flush();
+      live(sockets[0], 43);
+      live(sockets[0], 40);
+      jest.advanceTimersByTime(500);
+      await flush();
+      expect(sockets[0].delivered()).toEqual([{ communityId: COMMUNITY, seq: 43 }]);
+    });
+
+    it('keeps one acknowledgement in flight per community and sends what arrived meanwhile after it', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      let answer: (v: unknown) => void = () => {};
+      sockets[0].deliveredAck = () => new Promise((resolve) => (answer = resolve));
+      live(sockets[0], 43);
+      jest.advanceTimersByTime(500);
+      live(sockets[0], 44);
+      jest.advanceTimersByTime(500);
+      expect(sockets[0].delivered()).toEqual([{ communityId: COMMUNITY, seq: 43 }]);
+      sockets[0].deliveredAck = ({ communityId }) => ({ ok: true, data: { communityId } });
+      answer({ ok: true, data: { communityId: COMMUNITY } });
+      await flush();
+      jest.advanceTimersByTime(500);
+      expect(sockets[0].delivered()).toEqual([
+        { communityId: COMMUNITY, seq: 43 },
+        { communityId: COMMUNITY, seq: 44 },
+      ]);
+    });
+
+    it('holds the position while offline and sends it after reconnecting', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      live(sockets[0], 43);
+      sockets[0].connected = false;
+      sockets[0].receive('disconnect', 'transport close');
+      jest.advanceTimersByTime(1000);
+      expect(sockets[0].delivered()).toEqual([]);
+      await sockets[0].open();
+      await flush();
+      jest.advanceTimersByTime(500);
+      expect(sockets[0].delivered()).toEqual([{ communityId: COMMUNITY, seq: 43 }]);
+    });
+
+    it('sends again after a timed-out acknowledgement, but not after the membership ended', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      sockets[0].deliveredAck = () => Promise.reject(new Error('operation has timed out'));
+      live(sockets[0], 43);
+      jest.advanceTimersByTime(500);
+      await flush();
+      sockets[0].deliveredAck = ({ communityId }) => ({ ok: true, data: { communityId } });
+      live(sockets[0], 43); // a repeat of the same message triggers the retry
+      jest.advanceTimersByTime(500);
+      await flush();
+      expect(sockets[0].delivered()).toEqual([
+        { communityId: COMMUNITY, seq: 43 },
+        { communityId: COMMUNITY, seq: 43 },
+      ]);
+
+      sockets[0].deliveredAck = () => ({ ok: false, error: { code: 'MEMBERSHIP_REQUIRED', message: 'x' } });
+      live(sockets[0], 44);
+      jest.advanceTimersByTime(500);
+      await flush();
+      jest.advanceTimersByTime(5000);
+      expect(sockets[0].delivered()).toHaveLength(3);
+    });
+
+    it('drops pending acknowledgements on sign-out', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen } = setup();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[0].open();
+      live(sockets[0], 43);
+      realtime.reset();
+      realtime.subscribe(COMMUNITY, listen);
+      await sockets[1].open();
+      await flush();
+      jest.advanceTimersByTime(1000);
+      expect(sockets[0].delivered()).toEqual([]);
+      expect(sockets[1].delivered()).toEqual([]);
+    });
   });
 });

@@ -1,40 +1,65 @@
 import type { KinnocApi } from '../contract';
-import { unsupported } from '../errors';
-import type { Category, Page, UploadedImage } from '../types';
+import { ApiError, isApiError, unsupported } from '../errors';
+import type { Category, Page, PostImage, UploadedImage } from '../types';
 import type { HttpClient } from './client';
 import {
   type ApiAccount,
+  type ApiComment,
   type ApiCommunity,
+  type ApiEvent,
   type ApiInboxEntry,
   type ApiInvitation,
   type ApiJoinRequest,
   type ApiMember,
   type ApiMessage,
+  type ApiMessagePage,
+  type ApiPost,
   mapPage,
   toAccount,
   toApiMembership,
   toApiRole,
   toCommunity,
+  toComment,
   toCommunityBody,
+  toEvent,
+  toEventPage,
   toInboxEntry,
   toInvitation,
   toJoinRequest,
   toMember,
   toMessage,
+  toMessagePage,
   toOwnProfile,
+  toPost,
 } from './mappers';
 
 const enc = encodeURIComponent;
 
+/** The API searches events with 2 to 100 characters; shorter text lists everything. */
+const eventSearch = (query: string) => {
+  const q = query.trim().slice(0, 100);
+  return q.length >= 2 ? q : undefined;
+};
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+
 export interface HttpApiOptions {
   /** Uploads a local image to the community media bucket and returns its key. */
   uploadCommunityImage: (localUri: string) => Promise<UploadedImage>;
+  /** Uploads a local image to the post media bucket and returns its key and size. */
+  uploadPostImage: (localUri: string) => Promise<PostImage>;
+  /** Uploads a local image to the avatars bucket (square, small JPEG) and returns its key. */
+  uploadAvatar: (localUri: string) => Promise<UploadedImage>;
+  /** Deletes one of the caller's own files from the avatars bucket. */
+  removeAvatarFile: (key: string) => Promise<void>;
 }
+
+/** The API's feed scopes for the app's feed tabs. There is no personalised or following feed yet. */
+const FEED_SCOPE = { 'for-you': 'public', communities: 'communities' } as const;
 
 /**
  * KinnocApi over the Kinnoc API (`/api/v1`). Routes, payloads and rules follow the API's
- * docs/communities.md and docs/chat.md. Features the API does not offer yet throw an
- * `unsupported` ApiError, and `capabilities` tells screens to hide them.
+ * docs/api-contract.md, docs/communities.md and docs/chat.md. Features the API does not offer
+ * yet throw an `unsupported` ApiError, and `capabilities` tells screens to hide them.
  */
 export function createHttpApi(client: HttpClient, options: HttpApiOptions): KinnocApi {
   /** The signed-in account's ID, learned from `/users/me`, to answer "is this me?". */
@@ -53,13 +78,21 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
 
   const notAvailable = (feature: string) => () => Promise.reject(unsupported(feature));
 
+  const currentAvatarKey = async () => (await client.get<ApiAccount>('/users/me')).profile?.avatarKey ?? null;
+  /** Storage cleanup is best effort: a leftover file must never fail a change the API has made. */
+  const forget = (cleanup: Promise<void>) => cleanup.catch(() => undefined);
+
   return {
     capabilities: {
+      feed: true,
       social: false,
+      // The API publishes events only; opportunities and resources are not in it yet.
+      discoverKinds: ['event'],
       reactions: false,
       messageAttachments: false,
       inboxPreferences: false,
       profileDetails: false,
+      interestCatalogue: true,
     },
     account: {
       load: async () => {
@@ -73,13 +106,45 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       },
     },
     feed: {
-      list: notAvailable('The feed'),
-      get: notAvailable('Posts'),
-      create: notAvailable('Posting'),
-      remove: notAvailable('Posts'),
-      setLiked: notAvailable('Likes'),
-      comments: notAvailable('Replies'),
-      comment: notAvailable('Replies'),
+      list: async (scope, cursor) => {
+        if (scope === 'following') throw unsupported('The Following feed');
+        return mapPage(await client.get<Page<ApiPost>>('/feed', { query: { scope: FEED_SCOPE[scope], cursor } }), toPost);
+      },
+      community: async (ref, cursor) =>
+        mapPage(await client.get<Page<ApiPost>>(`/communities/${enc(ref)}/posts`, { query: { cursor } }), toPost),
+      get: async (postId) => toPost(await client.get<ApiPost>(`/posts/${enc(postId)}`)),
+      create: async ({ clientId, text, communityId, media, link }) =>
+        toPost(
+          await client.post<ApiPost>('/posts', {
+            body: {
+              text,
+              clientId,
+              ...(communityId ? { communityId } : {}),
+              ...(media.length ? { media: media.map(({ key, width, height }) => ({ key, width, height })) } : {}),
+              ...(link ? { link } : {}),
+            },
+          }),
+        ),
+      update: async (postId, changes) => toPost(await client.patch<ApiPost>(`/posts/${enc(postId)}`, { body: changes })),
+      remove: (postId) => client.delete(`/posts/${enc(postId)}`),
+      setLiked: (postId, liked) =>
+        liked
+          ? client.put<{ likeCount: number; likedByMe: boolean }>(`/posts/${enc(postId)}/like`)
+          : client.delete<{ likeCount: number; likedByMe: boolean }>(`/posts/${enc(postId)}/like`),
+      comments: async (postId, cursor) =>
+        mapPage(await client.get<Page<ApiComment>>(`/posts/${enc(postId)}/comments`, { query: { cursor } }), toComment),
+      replies: async (postId, commentId, cursor) =>
+        mapPage(
+          await client.get<Page<ApiComment>>(`/posts/${enc(postId)}/comments/${enc(commentId)}/replies`, { query: { cursor } }),
+          toComment,
+        ),
+      comment: async (postId, { clientId, text, parentId }) =>
+        toComment(
+          await client.post<ApiComment>(`/posts/${enc(postId)}/comments`, { body: { text, clientId, ...(parentId ? { parentId } : {}) } }),
+        ),
+      editComment: async (postId, commentId, text) =>
+        toComment(await client.patch<ApiComment>(`/posts/${enc(postId)}/comments/${enc(commentId)}`, { body: { text } })),
+      removeComment: (postId, commentId) => client.delete(`/posts/${enc(postId)}/comments/${enc(commentId)}`),
     },
     communities: {
       inbox: async () => (await client.get<ApiInboxEntry[]>('/users/me/inbox')).map(toInboxEntry),
@@ -133,14 +198,13 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
     },
     messages: {
       list: async (communityId, cursor) =>
-        mapPage(await client.get<Page<ApiMessage>>(`/communities/${enc(communityId)}/messages`, { query: { cursor } }), toMessage),
+        toMessagePage(await client.get<ApiMessagePage>(`/communities/${enc(communityId)}/messages`, { query: { cursor } })),
       since: async (communityId, seq, cursor) =>
-        mapPage(
-          await client.get<Page<ApiMessage>>(`/communities/${enc(communityId)}/messages`, {
+        toMessagePage(
+          await client.get<ApiMessagePage>(`/communities/${enc(communityId)}/messages`, {
             // `after` and `cursor` cannot be combined: the cursor already encodes the position.
             query: cursor ? { cursor, limit: 50 } : { after: seq, limit: 50 },
           }),
-          toMessage,
         ),
       send: async ({ communityId, clientId, text, replyToId }) =>
         toMessage(
@@ -153,11 +217,28 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
     },
     media: {
       uploadCommunityImage: options.uploadCommunityImage,
+      uploadPostImage: options.uploadPostImage,
     },
     discover: {
-      home: notAvailable('Discover'),
-      list: notAvailable('Discover'),
-      get: notAvailable('Discover'),
+      // Upcoming published events, soonest first (events in progress included).
+      home: async () => {
+        const { items } = toEventPage(await client.get<Page<ApiEvent>>('/events', { query: { limit: 12 } }));
+        const now = Date.now();
+        const thisWeek = items.filter((e) => Date.parse(e.startsAt) < now + WEEK).slice(0, 5);
+        const upcomingEvents = items.filter((e) => !thisWeek.includes(e)).slice(0, 5);
+        return { thisWeek, closingSoon: [], upcomingEvents, resources: [] };
+      },
+      list: async (filter, query, cursor) => {
+        if (filter === 'opportunities') throw unsupported('Opportunities');
+        if (filter === 'resources') throw unsupported('Resources');
+        return toEventPage(await client.get<Page<ApiEvent>>('/events', { query: { q: eventSearch(query), cursor } }));
+      },
+      // By ID or slug. Cancelled events are returned too, so a shared link can explain it.
+      get: async (itemId) => {
+        const event = toEvent(await client.get<ApiEvent>(`/events/${enc(itemId)}`));
+        if (!event) throw new ApiError('server', "This event couldn't be shown.");
+        return event;
+      },
     },
     profile: {
       me: loadMe,
@@ -169,7 +250,41 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
         await client.patch('/profiles/me', { body: { displayName, bio: bio ?? null } });
         return loadMe();
       },
-      posts: notAvailable('Posts'),
+      setAvatar: async (localUri) => {
+        const previous = await currentAvatarKey();
+        const uploaded = await options.uploadAvatar(localUri);
+        try {
+          await client.patch('/profiles/me', { body: { avatarKey: uploaded.key } });
+        } catch (error) {
+          // The API refused it: the current photo stays, so drop the file we just added.
+          await forget(options.removeAvatarFile(uploaded.key));
+          throw error;
+        }
+        // Only now that the new photo is saved is the old file safe to delete.
+        if (previous && previous !== uploaded.key) await forget(options.removeAvatarFile(previous));
+        return loadMe();
+      },
+      removeAvatar: async () => {
+        const previous = await currentAvatarKey();
+        await client.patch('/profiles/me', { body: { avatarKey: null } });
+        if (previous) await forget(options.removeAvatarFile(previous));
+        return loadMe();
+      },
+      setInterests: async (slugs) => {
+        await client.put('/users/me/interests', { body: { interests: slugs } });
+        return loadMe();
+      },
+      // Newest first. Feed posts identify people by username, so any other user ID is a username.
+      posts: async (userId, cursor) => {
+        const path = !myId || userId === myId ? '/users/me/posts' : `/profiles/${enc(userId)}/posts`;
+        try {
+          return mapPage(await client.get<Page<ApiPost>>(path, { query: { cursor } }), toPost);
+        } catch (error) {
+          // An API deployed without these routes answers the generic NOT_FOUND.
+          if (isApiError(error, 'NOT_FOUND')) throw unsupported('Your list of posts');
+          throw error;
+        }
+      },
     },
     notifications: {
       list: notAvailable('Notifications'),

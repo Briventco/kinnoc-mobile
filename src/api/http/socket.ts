@@ -1,7 +1,7 @@
 import { io, type ManagerOptions, type Socket, type SocketOptions } from 'socket.io-client';
 
 import type { ConversationEvent, RealtimeClient, RealtimeStatus } from '../realtime';
-import { type ApiMessage, toMessage } from './mappers';
+import { type ApiMessage, type ApiReceipts, toMessage, toReceipts } from './mappers';
 
 type Listener = (event: ConversationEvent) => void;
 type Ack<T> = { ok: true; data: T } | { ok: false; error: { code: string; message: string } };
@@ -24,6 +24,10 @@ const TYPING_TTL_MS = 5000;
 const IDLE_DISCONNECT_MS = 30_000;
 const ACK_TIMEOUT_MS = 10_000;
 const MAX_HANDSHAKE_RETRIES = 4;
+/** Live messages arriving within this window share one `delivered` acknowledgement. */
+const DELIVERED_BATCH_MS = 500;
+/** Refusals that mean the conversation is closed to the viewer: stop acknowledging it. */
+const ACCESS_ENDED = new Set(['MEMBERSHIP_REQUIRED', 'COMMUNITY_NOT_FOUND']);
 
 /**
  * Community chat over the API's Socket.IO gateway (docs/chat.md section 5).
@@ -35,6 +39,11 @@ const MAX_HANDSHAKE_RETRIES = 4;
  *   (`session:expired`); the client reconnects with a fresh one.
  * - After every (re)connect each open conversation subscribes again; the acknowledgement's
  *   `lastSeq` lets the conversation fetch whatever it missed (`subscribed` event).
+ * - Delivered receipts: when live messages from other people arrive, the highest `seq` received
+ *   per community is sent back as `delivered`, batched over DELIVERED_BATCH_MS. At most one is in
+ *   flight per community, and what waits is one number per community, so nothing queues up while
+ *   offline; it goes out after the next connect. History and catch-up requests count as delivery
+ *   on the server already.
  */
 export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeClient {
   const connect = options.connect ?? io;
@@ -53,6 +62,14 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
   const statusListeners = new Set<(s: RealtimeStatus) => void>();
   /** communityId → username → who is typing and when it lapses. */
   const typing = new Map<string, Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>>();
+  /** communityId → highest `seq` received live and not yet sent as `delivered`. */
+  const deliveredPending = new Map<string, number>();
+  /** communityId → highest `seq` the server has acknowledged as delivered. */
+  const deliveredAcked = new Map<string, number>();
+  const deliveredInFlight = new Set<string>();
+  let deliveredTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped by `reset` (sign-out), so answers to an earlier session's acknowledgements are ignored. */
+  let session = 0;
 
   const setStatus = (next: RealtimeStatus) => {
     if (next === status) return;
@@ -79,20 +96,77 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
   const clearTimers = () => {
     if (retryTimer) clearTimeout(retryTimer);
     if (idleTimer) clearTimeout(idleTimer);
-    retryTimer = idleTimer = null;
+    if (deliveredTimer) clearTimeout(deliveredTimer);
+    retryTimer = idleTimer = deliveredTimer = null;
   };
+
+  const deliveredUpTo = (communityId: string) => Math.max(deliveredAcked.get(communityId) ?? 0, deliveredPending.get(communityId) ?? 0);
+
+  function scheduleDelivered() {
+    deliveredTimer ??= setTimeout(flushDelivered, DELIVERED_BATCH_MS);
+  }
+
+  /** Records that a live message reached the app; it is acknowledged with the next batch. */
+  function noteDelivered(communityId: string, seq: number) {
+    if (seq <= deliveredUpTo(communityId)) return;
+    deliveredPending.set(communityId, seq);
+    scheduleDelivered();
+  }
+
+  function forgetDelivered(communityId: string) {
+    deliveredPending.delete(communityId);
+    deliveredAcked.delete(communityId);
+  }
+
+  function flushDelivered() {
+    deliveredTimer = null;
+    const s = socket;
+    // Offline: the pending positions wait (one per community) and go out on the next connect.
+    if (!s?.connected) return;
+    const current = session;
+    for (const [communityId, seq] of deliveredPending) {
+      if (deliveredInFlight.has(communityId)) continue;
+      deliveredPending.delete(communityId);
+      deliveredInFlight.add(communityId);
+      (s.timeout(ACK_TIMEOUT_MS).emitWithAck('delivered', { communityId, seq }) as Promise<Ack<unknown>>)
+        .then(
+          (ack) => {
+            if (current !== session) return;
+            if (ack.ok) deliveredAcked.set(communityId, Math.max(seq, deliveredAcked.get(communityId) ?? 0));
+            else if (ACCESS_ENDED.has(ack.error.code)) forgetDelivered(communityId);
+            // Other refusals (validation) would only repeat; the next live message tries again.
+          },
+          () => {
+            // No acknowledgement in time: send it again with the next batch or after reconnecting.
+            if (current === session && seq > deliveredUpTo(communityId)) deliveredPending.set(communityId, seq);
+          },
+        )
+        .finally(() => {
+          if (current !== session) return;
+          deliveredInFlight.delete(communityId);
+          // Newer messages arrived while this one was in flight.
+          if (deliveredPending.has(communityId) && socket?.connected) scheduleDelivered();
+        });
+    }
+  }
 
   async function join(communityId: string) {
     const s = socket;
     if (!s?.connected) return;
     try {
-      const ack = (await s.timeout(ACK_TIMEOUT_MS).emitWithAck('subscribe', { communityId })) as Ack<{ lastSeq: number }>;
+      const ack = (await s.timeout(ACK_TIMEOUT_MS).emitWithAck('subscribe', { communityId })) as Ack<{
+        lastSeq: number;
+        receipts?: ApiReceipts | null;
+      }>;
       if (!listeners.has(communityId)) {
         // Left while the subscription was in flight.
         s.emit('unsubscribe', { communityId });
         return;
       }
-      emitTo(communityId, ack.ok ? { type: 'subscribed', lastSeq: ack.data.lastSeq } : { type: 'error', code: ack.error.code });
+      emitTo(
+        communityId,
+        ack.ok ? { type: 'subscribed', lastSeq: ack.data.lastSeq, receipts: toReceipts(ack.data.receipts) } : { type: 'error', code: ack.error.code },
+      );
     } catch {
       // No acknowledgement in time; the next reconnect subscribes again.
     }
@@ -127,6 +201,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
       handshakeFailures = 0;
       setStatus('connected');
       for (const id of listeners.keys()) void join(id);
+      if (deliveredPending.size) scheduleDelivered();
     });
     s.on('disconnect', (reason) => {
       for (const id of typing.keys()) stopTyping(id);
@@ -158,7 +233,10 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     });
     s.on('message', ({ communityId, message }: { communityId: string; message: ApiMessage }) => {
       if (message.sender) stopTyping(communityId, message.sender.username);
+      if (!listeners.has(communityId)) return;
       emitTo(communityId, { type: 'message', message: toMessage(message) });
+      // The sender's own positions advance when they send; only others' messages need acknowledging.
+      if (!message.isMine && Number.isInteger(message.seq)) noteDelivered(communityId, message.seq);
     });
     s.on('message:deleted', ({ communityId, messageId }: { communityId: string; messageId: string }) =>
       emitTo(communityId, { type: 'deleted', messageId }),
@@ -176,7 +254,14 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     s.on('read', ({ communityId, lastReadSeq }: { communityId: string; lastReadSeq: number }) =>
       emitTo(communityId, { type: 'read', communityId, lastReadSeq }),
     );
-    s.on('subscription:ended', ({ communityId }: { communityId: string }) => emitTo(communityId, { type: 'ended' }));
+    s.on('receipts', ({ communityId, ...raw }: { communityId: string } & ApiReceipts) => {
+      const receipts = toReceipts(raw);
+      if (receipts) emitTo(communityId, { type: 'receipts', receipts });
+    });
+    s.on('subscription:ended', ({ communityId }: { communityId: string }) => {
+      forgetDelivered(communityId);
+      emitTo(communityId, { type: 'ended' });
+    });
 
     appStateSub = appState?.addEventListener('change', (state) => {
       const isForeground = state === 'active';
@@ -243,7 +328,11 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
       return () => statusListeners.delete(listener);
     },
     reset() {
+      session += 1;
       listeners.clear();
+      deliveredPending.clear();
+      deliveredAcked.clear();
+      deliveredInFlight.clear();
       close();
     },
   };

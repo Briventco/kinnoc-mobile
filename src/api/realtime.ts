@@ -1,4 +1,4 @@
-import type { ID, Message, Reaction } from './types';
+import type { ID, Message, Reaction, Receipts } from './types';
 
 /** Events a community conversation can receive while it is open. */
 export type ConversationEvent =
@@ -10,9 +10,12 @@ export type ConversationEvent =
   | { type: 'read'; communityId: ID; lastReadSeq: number }
   /**
    * The subscription is (re)established. `lastSeq` is the newest message on the server; anything
-   * newer than what the client holds must be fetched (missed while disconnected).
+   * newer than what the client holds must be fetched (missed while disconnected). `receipts` is the
+   * conversation's Delivered and Seen state, when the backend provides it.
    */
-  | { type: 'subscribed'; lastSeq: number }
+  | { type: 'subscribed'; lastSeq: number; receipts: Receipts | null }
+  /** The conversation's Delivered or Seen position moved. */
+  | { type: 'receipts'; receipts: Receipts }
   /** The viewer left or was removed: no more events will arrive. */
   | { type: 'ended' }
   /** The server refused the subscription (for example, no longer a member). */
@@ -23,7 +26,8 @@ export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'offline';
 /**
  * Realtime transport for community conversations. The UI subscribes through
  * `useConversationEvents`, which merges events into the query cache, so swapping the
- * transport needs no screen changes.
+ * transport needs no screen changes. A transport that supports delivery receipts tells the
+ * server itself when live messages from others have reached the app.
  */
 export interface RealtimeClient {
   /** True when events are pushed live. When false, screens refresh by polling. */
