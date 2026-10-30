@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { Platform } from 'react-native';
 
 import { uid } from '@/lib/format';
 
@@ -28,29 +29,46 @@ export const MEDIA_LIMITS: ImageLimits = { maxBytes: 5 * 1024 * 1024, maxEdge: 1
 /** Profile photos: square, small, well under the avatars bucket's 2 MB limit. */
 export const AVATAR_LIMITS: ImageLimits = { maxBytes: 2 * 1024 * 1024, maxEdge: 512, square: true };
 
+/** Reads raw bytes from an image URI across web and native platforms. */
+async function readImageBytes(uri: string): Promise<ArrayBuffer> {
+  if (Platform.OS === 'web') {
+    const res = await fetch(uri);
+    if (!res.ok) {
+      throw new ApiError('network', 'Could not read image file.');
+    }
+    return res.arrayBuffer();
+  }
+  return new File(uri).arrayBuffer();
+}
+
 /** Re-encodes any picked image (HEIC, PNG…) as a JPEG within the limits. */
 async function toJpeg(localUri: string, limits: ImageLimits): Promise<{ uri: string; width: number; height: number }> {
-  const original = await ImageManipulator.manipulate(localUri).renderAsync();
-  let width = original.width;
-  let height = original.height;
-  let crop: { originX: number; originY: number; width: number; height: number } | null = null;
-  if (limits.square && width !== height) {
-    const side = Math.min(width, height);
-    crop = { originX: Math.floor((width - side) / 2), originY: Math.floor((height - side) / 2), width: side, height: side };
-    width = height = side;
+  try {
+    const original = await ImageManipulator.manipulate(localUri).renderAsync();
+    let width = original.width;
+    let height = original.height;
+    let crop: { originX: number; originY: number; width: number; height: number } | null = null;
+    if (limits.square && width !== height) {
+      const side = Math.min(width, height);
+      crop = { originX: Math.floor((width - side) / 2), originY: Math.floor((height - side) / 2), width: side, height: side };
+      width = height = side;
+    }
+    const longest = Math.max(width, height);
+    const resize =
+      longest > limits.maxEdge ? (width >= height ? { width: limits.maxEdge, height: null } : { width: null, height: limits.maxEdge }) : null;
+    let image = original;
+    if (crop || resize) {
+      const chain = ImageManipulator.manipulate(localUri);
+      if (crop) chain.crop(crop);
+      if (resize) chain.resize(resize);
+      image = await chain.renderAsync();
+    }
+    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.82 });
+    return { uri: saved.uri, width: saved.width, height: saved.height };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('validation', 'Unsupported image format or invalid image file.');
   }
-  const longest = Math.max(width, height);
-  const resize =
-    longest > limits.maxEdge ? (width >= height ? { width: limits.maxEdge, height: null } : { width: null, height: limits.maxEdge }) : null;
-  let image = original;
-  if (crop || resize) {
-    const chain = ImageManipulator.manipulate(localUri);
-    if (crop) chain.crop(crop);
-    if (resize) chain.resize(resize);
-    image = await chain.renderAsync();
-  }
-  const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.82 });
-  return { uri: saved.uri, width: saved.width, height: saved.height };
 }
 
 /**
@@ -67,14 +85,24 @@ export function createImageUploader(client: SupabaseClient, bucket: string, limi
     if (!userId) throw new ApiError('unauthorized', 'Sign in again to upload images.', 401);
 
     const jpeg = await toJpeg(localUri, limits);
-    const bytes = await new File(jpeg.uri).arrayBuffer();
+    const bytes = await readImageBytes(jpeg.uri);
     if (bytes.byteLength > limits.maxBytes) {
+      if (Platform.OS === 'web' && jpeg.uri.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(jpeg.uri);
+        } catch {}
+      }
       throw new ApiError('validation', `That image is too large. Choose one under ${Math.round(limits.maxBytes / (1024 * 1024))} MB.`);
     }
 
     // Random names keep public URLs unguessable.
     const key = `${userId}/${uid()}.jpg`;
     const { error } = await client.storage.from(bucket).upload(key, bytes, { contentType: 'image/jpeg', upsert: false });
+    if (Platform.OS === 'web' && jpeg.uri.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(jpeg.uri);
+      } catch {}
+    }
     if (error) {
       const status = Number((error as { statusCode?: string | number }).statusCode) || null;
       throw new ApiError(status ? (status >= 500 ? 'server' : 'forbidden') : 'network', "That image couldn't be uploaded. Try again.", status);

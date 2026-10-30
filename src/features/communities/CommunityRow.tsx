@@ -130,17 +130,29 @@ function accessLabel(c: Community) {
   return null;
 }
 
+/**
+ * A row whose body opens something and whose trailing buttons act on their own. They are
+ * siblings, not nested, so screen readers reach each button (and web renders valid HTML).
+ */
+function ActionRow({ onPress, label, children, actions }: { onPress: () => void; label: string; children: ReactNode; actions?: ReactNode }) {
+  return (
+    <View style={styles.row}>
+      <Pressable onPress={onPress} style={styles.main} accessibilityRole="button" accessibilityLabel={label} pressedOpacity={0.7}>
+        {children}
+      </Pressable>
+      {actions}
+    </View>
+  );
+}
+
 /** A community to discover: identity, category and members, and the action that fits the viewer. */
 export function BrowseRow({ community, onPress, onJoin, joining }: BrowseRowProps) {
   const access = accessLabel(community);
-  const { membership, joinPolicy } = community;
   return (
-    <Pressable
+    <ActionRow
       onPress={onPress}
-      style={styles.row}
-      accessibilityRole="button"
-      accessibilityLabel={[community.name, community.category, plural(community.memberCount, 'member'), access].filter(Boolean).join(', ')}
-      pressedOpacity={0.7}
+      label={[community.name, community.category, plural(community.memberCount, 'member'), access].filter(Boolean).join(', ')}
+      actions={<BrowseAction community={community} onPress={onPress} onJoin={onJoin} joining={joining} />}
     >
       <CommunityAvatar id={community.id} monogram={community.monogram} uri={community.photoUrl} size={size.communityLg} />
       <View style={styles.body}>
@@ -152,23 +164,28 @@ export function BrowseRow({ community, onPress, onJoin, joining }: BrowseRowProp
           {access ? ` · ${access}` : ''}
         </Text>
       </View>
-      {membership === 'member' ? (
-        <Button label="Joined" variant="joined" size="small" onPress={onPress} />
-      ) : membership === 'pending' ? (
-        <Button label="Requested" variant="joined" size="small" onPress={onPress} />
-      ) : membership === 'invited' ? (
-        <Button label="Invited" variant="join" size="small" onPress={onPress} accessibilityHint="Opens the invitation" />
-      ) : joinPolicy === 'invite-only' ? null : (
-        <Button
-          label={joinPolicy === 'approval' ? 'Request' : 'Join'}
-          variant="join"
-          size="small"
-          loading={joining}
-          onPress={onJoin}
-          accessibilityHint={joinPolicy === 'approval' ? `Asks to join ${community.name}` : `Joins ${community.name}`}
-        />
-      )}
-    </Pressable>
+    </ActionRow>
+  );
+}
+
+/** The one action that fits the viewer's relationship to the community. */
+function BrowseAction({ community, onPress, onJoin, joining }: BrowseRowProps) {
+  const { membership, joinPolicy } = community;
+  return membership === 'member' ? (
+    <Button label="Joined" variant="joined" size="small" onPress={onPress} />
+  ) : membership === 'pending' ? (
+    <Button label="Requested" variant="joined" size="small" onPress={onPress} />
+  ) : membership === 'invited' ? (
+    <Button label="Invited" variant="join" size="small" onPress={onPress} accessibilityHint="Opens the invitation" />
+  ) : joinPolicy === 'invite-only' ? null : (
+    <Button
+      label={joinPolicy === 'approval' ? 'Request' : 'Join'}
+      variant="join"
+      size="small"
+      loading={joining}
+      onPress={onJoin}
+      accessibilityHint={joinPolicy === 'approval' ? `Asks to join ${community.name}` : `Joins ${community.name}`}
+    />
   );
 }
 
@@ -176,12 +193,10 @@ export function BrowseRow({ community, onPress, onJoin, joining }: BrowseRowProp
 export function PendingRow({ community, onPress, children }: { community: Community; onPress: () => void; children?: ReactNode }) {
   const invited = community.membership === 'invited';
   return (
-    <Pressable
+    <ActionRow
       onPress={onPress}
-      style={styles.row}
-      accessibilityRole="button"
-      accessibilityLabel={invited ? `Invitation to ${community.name}` : `Request to join ${community.name}, waiting for approval`}
-      pressedOpacity={0.7}
+      label={invited ? `Invitation to ${community.name}` : `Request to join ${community.name}, waiting for approval`}
+      actions={children}
     >
       <CommunityAvatar id={community.id} monogram={community.monogram} uri={community.photoUrl} size={size.communityLg} />
       <View style={styles.body}>
@@ -192,8 +207,7 @@ export function PendingRow({ community, onPress, children }: { community: Commun
           {invited ? 'You’re invited to join' : 'Waiting for approval'}
         </Text>
       </View>
-      {children}
-    </Pressable>
+    </ActionRow>
   );
 }
 
@@ -207,6 +221,7 @@ const styles = StyleSheet.create({
     paddingVertical: space[3],
     backgroundColor: colors.surface,
   },
+  main: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space[3] },
   body: { flex: 1, minWidth: 0, gap: 3 },
   line: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 },

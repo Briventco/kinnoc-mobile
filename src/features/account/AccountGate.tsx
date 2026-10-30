@@ -8,8 +8,11 @@ import { Button } from '@/components/Button';
 import { TextField } from '@/components/Field';
 import { CenteredSpinner, ErrorState } from '@/components/States';
 import { Text } from '@/components/Text';
-import { AuthScaffold } from '@/features/auth/AuthScaffold';
+import { AuthScaffold, AuthSwitch } from '@/features/auth/AuthScaffold';
 import { validateName, validateUsername } from '@/features/auth/validation';
+import { useSetInterests } from '@/features/profile/hooks';
+import { InterestPicker } from '@/features/profile/InterestPicker';
+import { api } from '@/services';
 import { colors, gutter, space } from '@/theme';
 
 import { useAccount, useCreateProfile } from './hooks';
@@ -21,6 +24,8 @@ import { useAccount, useCreateProfile } from './hooks';
 export function AccountGate({ children }: { children: ReactNode }) {
   const { status, signOut } = useAuth();
   const account = useAccount(status === 'signedIn');
+  // Right after a profile is created, offer interests once before the app opens.
+  const [pickInterests, setPickInterests] = useState(false);
 
   if (account.isPending) return <Connecting onSignOut={() => void signOut()} />;
   if (account.isError) {
@@ -35,7 +40,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
       </SafeAreaView>
     );
   }
-  if (!account.data.profile) return <CreateProfile />;
+  if (!account.data.profile) return <CreateProfile onCreated={() => setPickInterests(api.capabilities.interestCatalogue)} />;
+  if (pickInterests) return <PickInterests onDone={() => setPickInterests(false)} />;
   return <>{children}</>;
 }
 
@@ -64,7 +70,7 @@ function Connecting({ onSignOut }: { onSignOut: () => void }) {
 }
 
 /** Onboarding: the API keeps usernames on the profile, not in sign-up metadata. */
-function CreateProfile() {
+function CreateProfile({ onCreated }: { onCreated: () => void }) {
   const { session, signOut } = useAuth();
   const create = useCreateProfile();
   const [values, setValues] = useState({
@@ -74,12 +80,14 @@ function CreateProfile() {
   const [errors, setErrors] = useState<{ displayName?: string | null; username?: string | null }>({});
 
   const submit = () => {
+    if (create.isPending) return;
     const next = { displayName: validateName(values.displayName), username: validateUsername(values.username) };
     setErrors(next);
     if (next.displayName || next.username) return;
     create.mutate(
       { displayName: values.displayName.trim(), username: values.username.trim().toLowerCase() },
       {
+        onSuccess: onCreated,
         onError: (e) => {
           if (e instanceof ApiError && e.serverCode === 'USERNAME_TAKEN') setErrors({ username: 'That username is taken. Try another.' });
           else if (e instanceof ApiError && Object.keys(e.fields).length) setErrors({ displayName: e.fields.displayName, username: e.fields.username });
@@ -91,7 +99,16 @@ function CreateProfile() {
   const unexpected = create.error && !(create.error instanceof ApiError && (create.error.serverCode === 'USERNAME_TAKEN' || Object.keys(create.error.fields).length));
 
   return (
-    <AuthScaffold title="Set up your profile" intro="This is how people in your communities will see you. You can change your name later.">
+    <AuthScaffold
+      back={false}
+      title="Set up your profile"
+      intro="This is how people in your communities will see you. You can change your name later."
+      footer={
+        <AuthSwitch question="Not you?">
+          <Button label="Sign out" variant="text" onPress={() => void signOut()} />
+        </AuthSwitch>
+      }
+    >
       <TextField
         label="Name"
         value={values.displayName}
@@ -118,7 +135,24 @@ function CreateProfile() {
         </Text>
       ) : null}
       <Button label="Continue" size="large" onPress={submit} loading={create.isPending} />
-      <Button label="Sign out" variant="text" onPress={() => void signOut()} />
+    </AuthScaffold>
+  );
+}
+
+/** Optional, once, after the profile is created: interests shape Discover and the profile. */
+function PickInterests({ onDone }: { onDone: () => void }) {
+  const save = useSetInterests();
+  const [picked, setPicked] = useState<string[]>([]);
+  return (
+    <AuthScaffold
+      back={false}
+      title="What are you into?"
+      intro="Pick a few interests so Kinnoc can show you the right communities and opportunities. You can change them any time."
+      footer={<Button label="Skip for now" variant="text" subdued onPress={onDone} disabled={save.isPending} style={styles.skip} />}
+    >
+      {save.isError ? <ErrorState error={save.error} style={styles.error} /> : null}
+      <InterestPicker picked={picked} onChange={setPicked} label={null} />
+      <Button label="Continue" size="large" loading={save.isPending} disabled={!picked.length} onPress={() => save.mutate(picked, { onSuccess: onDone })} />
     </AuthScaffold>
   );
 }
@@ -127,6 +161,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   problem: { padding: gutter, gap: space[4], paddingTop: space[8] },
   error: { paddingHorizontal: 0 },
+  skip: { alignSelf: 'center' },
   slow: { paddingHorizontal: gutter, paddingBottom: space[8], gap: space[2], alignItems: 'center' },
   slowText: { textAlign: 'center' },
 });

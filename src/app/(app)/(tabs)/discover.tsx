@@ -45,7 +45,10 @@ export default function DiscoverScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
-      <PageHeader title="Discover" actions={<IconButton icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} />} />
+      <PageHeader
+        title="Discover"
+        actions={api.capabilities.social ? <IconButton icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} /> : undefined}
+      />
       <View style={styles.search}>
         {/* Opened from the Feed search button: each press passes a new token, which remounts and focuses the field. */}
         <SearchField key={params.search ?? 'search'} autoFocus={!!params.search} value={query} onChangeText={setQuery} placeholder={ONLY_EVENTS ? 'Search events, organisers, cities' : 'Events, internships, scholarships, guides'} />

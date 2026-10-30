@@ -5,7 +5,12 @@ import { keys, queryClient } from '@/lib/query';
 import { api } from '@/services';
 
 export function useStories() {
-  return useQuery({ queryKey: keys.stories, queryFn: () => api.stories.list(), refetchInterval: 5 * 60_000 });
+  return useQuery({
+    queryKey: keys.stories,
+    queryFn: () => api.stories.list(),
+    refetchInterval: 5 * 60_000,
+    enabled: api.capabilities.social,
+  });
 }
 
 export function useCreateStory() {

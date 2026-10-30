@@ -67,3 +67,11 @@ export function useUpdateProfile() {
     onError: () => void queryClient.invalidateQueries({ queryKey: keys.me }),
   });
 }
+
+/** Replaces your interests (catalogue slugs), for profile setup. */
+export function useSetInterests() {
+  return useMutation({
+    mutationFn: (slugs: string[]) => api.profile.setInterests(slugs),
+    onSuccess: (profile) => queryClient.setQueryData(keys.me, profile),
+  });
+}

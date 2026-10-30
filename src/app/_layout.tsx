@@ -9,6 +9,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { BrandSplash } from '@/components/BrandSplash';
+import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
 import { ToastProvider } from '@/components/Toast';
 import { env } from '@/config/env';
@@ -28,10 +29,12 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <OnboardingProvider>
-            <ToastProvider>
-              <StatusBar style="dark" />
-              <RootNavigator fontsReady={fontsReady} />
-            </ToastProvider>
+            <ResponsiveContainer>
+              <ToastProvider>
+                <StatusBar style="dark" />
+                <RootNavigator fontsReady={fontsReady} />
+              </ToastProvider>
+            </ResponsiveContainer>
           </OnboardingProvider>
         </AuthProvider>
       </QueryClientProvider>

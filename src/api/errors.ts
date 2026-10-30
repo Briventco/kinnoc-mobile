@@ -109,7 +109,7 @@ export function describeError(error: unknown): string {
       case 'network':
         return "You're offline or the connection dropped.";
       case 'timeout':
-        return 'That took too long to load.';
+        return 'Connecting took longer than expected. The server may still be waking up — tap retry in a moment.';
       case 'unauthorized':
         return 'Your session has ended. Sign in again.';
       case 'forbidden':

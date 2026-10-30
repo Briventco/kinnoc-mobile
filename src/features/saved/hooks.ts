@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
 
+import { describeError } from '@/api/errors';
 import type { DiscoverItem, Post } from '@/api/types';
 import { useToast } from '@/components/Toast';
 import { nextCursor, snapshot, updateDiscoverEverywhere, updatePostEverywhere } from '@/lib/cache';
@@ -13,6 +14,7 @@ export function useSaved() {
     queryFn: ({ pageParam }) => api.saved.list(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextCursor,
+    enabled: api.capabilities.social,
   });
 }
 
@@ -35,7 +37,7 @@ export function useToggleSave() {
     },
     onError: (_e, _v, ctx) => {
       ctx?.restore();
-      toast.show({ message: "Couldn't update Saved. Try again." });
+      toast.show({ message: describeError(_e) });
     },
     onSuccess: (_r, { saved }) => {
       if (saved) toast.show({ message: 'Saved for later', action: { label: 'View saved', onPress: () => router.push('/saved') } });

@@ -11,6 +11,11 @@ export type ApiMode = 'mock' | 'http';
 export type AuthMode = 'preview' | 'supabase';
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '') || undefined;
+
+/** Published legal pages. Only absolute https URLs count; anything else is treated as unset. */
+const httpsUrl = (value: string | undefined) => (value && /^https:\/\/[^\s/]+\.[^\s]+$/i.test(value.trim()) ? value.trim() : undefined);
+const termsUrl = httpsUrl(process.env.EXPO_PUBLIC_TERMS_URL);
+const privacyUrl = httpsUrl(process.env.EXPO_PUBLIC_PRIVACY_URL);
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() || undefined;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() || undefined;
 
@@ -60,6 +65,11 @@ export const env = {
   authMode,
   supabaseUrl,
   supabaseAnonKey,
+  /**
+   * Kinnoc's Terms and Privacy Policy, once published. Until both are set the app asks no one to
+   * agree to them and shows no links.
+   */
+  legal: termsUrl && privacyUrl ? { termsUrl, privacyUrl } : null,
   /** True when the app shows sample fixtures instead of the Kinnoc backend. */
   usesSampleData: apiMode === 'mock',
   /** True when sign-in is the local, non-production preview. */

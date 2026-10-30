@@ -34,25 +34,28 @@ function Bubble({ reel, onPress, onAdd, busy }: { reel: StoryReel; onPress: () =
   const ringColor = reel.isMine ? (hasFrames ? colors.border : 'transparent') : reel.seen ? colors.border : colors.primary;
   const label = reel.isMine ? 'Your story' : reel.author.displayName.split(' ')[0];
   return (
-    <Pressable
-      onPress={onPress}
-      style={styles.item}
-      accessibilityRole="button"
-      accessibilityLabel={reel.isMine ? (hasFrames ? 'Your story. Opens your story' : 'Add to your story') : `${reel.author.displayName}'s story${reel.seen ? ', seen' : ', new'}`}
-      pressedOpacity={0.75}
-    >
-      <View style={[styles.ring, { borderColor: ringColor }, busy && styles.busy]}>
-        <StoryAvatar uri={reel.author.avatarUrl} size={SIZE} />
-      </View>
+    // The "+" is a sibling of the story button, laid over it, so screen readers reach both.
+    <View style={styles.item}>
+      <Pressable
+        onPress={onPress}
+        style={styles.itemButton}
+        accessibilityRole="button"
+        accessibilityLabel={reel.isMine ? (hasFrames ? 'Your story. Opens your story' : 'Add to your story') : `${reel.author.displayName}'s story${reel.seen ? ', seen' : ', new'}`}
+        pressedOpacity={0.75}
+      >
+        <View style={[styles.ring, { borderColor: ringColor }, busy && styles.busy]}>
+          <StoryAvatar uri={reel.author.avatarUrl} size={SIZE} />
+        </View>
+        <Text variant="meta" color={reel.isMine || !reel.seen ? 'text' : 'textTertiary'} numberOfLines={1} style={styles.label}>
+          {label}
+        </Text>
+      </Pressable>
       {reel.isMine && onAdd ? (
         <Pressable onPress={onAdd} style={styles.add} accessibilityRole="button" accessibilityLabel="Add a photo to your story" hitSlop={8}>
           <Plus size={14} color={colors.onPrimary} strokeWidth={3} />
         </Pressable>
       ) : null}
-      <Text variant="meta" color={reel.isMine || !reel.seen ? 'text' : 'textTertiary'} numberOfLines={1} style={styles.label}>
-        {label}
-      </Text>
-    </Pressable>
+    </View>
   );
 }
 
@@ -117,7 +120,8 @@ export function StoryRow() {
 const styles = StyleSheet.create({
   row: { paddingHorizontal: gutter, paddingTop: 10, paddingBottom: space[2], gap: space[3], alignItems: 'flex-start' },
   skeleton: { flexDirection: 'row' },
-  item: { width: SIZE + RING * 4 + 4, alignItems: 'center', gap: 6 },
+  item: { width: SIZE + RING * 4 + 4 },
+  itemButton: { alignItems: 'center', gap: 6 },
   ring: { padding: RING - 1, borderRadius: SIZE, borderWidth: RING },
   busy: { opacity: 0.5 },
   add: {

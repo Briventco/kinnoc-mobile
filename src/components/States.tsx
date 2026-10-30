@@ -42,34 +42,48 @@ export function SkeletonList({
   rows = 6,
   shape = 'circle',
   media = false,
+  noticeAfterMs = 6000,
 }: {
   rows?: number;
   shape?: 'circle' | 'square';
   media?: boolean;
+  noticeAfterMs?: number;
 }) {
   const opacity = usePulse();
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!noticeAfterMs) return;
+    const timer = setTimeout(() => setSlow(true), noticeAfterMs);
+    return () => clearTimeout(timer);
+  }, [noticeAfterMs]);
+
   return (
-    <Animated.View
-      style={{ opacity }}
-      accessible
-      accessibilityLabel="Loading"
-      accessibilityRole="progressbar"
-    >
-      {Array.from({ length: rows }, (_, i) => (
-        <View key={i} style={styles.skeletonRow}>
-          <View style={styles.skeletonHead}>
-            <SkeletonBlock
-              style={{ width: 44, height: 44, borderRadius: shape === 'circle' ? 22 : communityRadius(44) }}
-            />
-            <View style={styles.skeletonLines}>
-              <SkeletonBlock style={{ width: '40%', height: 12 }} />
-              <SkeletonBlock style={{ width: '25%', height: 10 }} />
-            </View>
-          </View>
-          {media && i === 0 ? <SkeletonBlock style={styles.skeletonMedia} /> : null}
+    <View accessible accessibilityLabel={slow ? 'Connecting to server' : 'Loading'} accessibilityRole="progressbar">
+      {slow ? (
+        <View style={styles.skeletonNotice}>
+          <Text variant="meta" color="textTertiary" style={styles.skeletonNoticeText}>
+            Connecting to server… This can take up to a minute when waking up.
+          </Text>
         </View>
-      ))}
-    </Animated.View>
+      ) : null}
+      <Animated.View style={{ opacity }}>
+        {Array.from({ length: rows }, (_, i) => (
+          <View key={i} style={styles.skeletonRow}>
+            <View style={styles.skeletonHead}>
+              <SkeletonBlock
+                style={{ width: 44, height: 44, borderRadius: shape === 'circle' ? 22 : communityRadius(44) }}
+              />
+              <View style={styles.skeletonLines}>
+                <SkeletonBlock style={{ width: '40%', height: 12 }} />
+                <SkeletonBlock style={{ width: '25%', height: 10 }} />
+              </View>
+            </View>
+            {media && i === 0 ? <SkeletonBlock style={styles.skeletonMedia} /> : null}
+          </View>
+        ))}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -83,17 +97,34 @@ const BUBBLES: { mine: boolean; width: `${number}%`; lines: number }[] = [
   { mine: true, width: '58%', lines: 2 },
 ];
 
-export function MessageSkeleton() {
+export function MessageSkeleton({ noticeAfterMs = 6000 }: { noticeAfterMs?: number } = {}) {
   const opacity = usePulse();
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!noticeAfterMs) return;
+    const timer = setTimeout(() => setSlow(true), noticeAfterMs);
+    return () => clearTimeout(timer);
+  }, [noticeAfterMs]);
+
   return (
-    <Animated.View style={[styles.bubbles, { opacity }]} accessible accessibilityLabel="Loading messages" accessibilityRole="progressbar">
-      {BUBBLES.map((b, i) => (
-        <View key={i} style={[styles.bubbleRow, b.mine && styles.bubbleRowMine]}>
-          {!b.mine ? <SkeletonBlock style={styles.bubbleAvatar} /> : null}
-          <SkeletonBlock style={{ width: b.width, height: 18 + b.lines * 18, borderRadius: radius.bubble }} />
+    <View style={styles.flex}>
+      {slow ? (
+        <View style={styles.skeletonNotice}>
+          <Text variant="meta" color="textTertiary" style={styles.skeletonNoticeText}>
+            Connecting to conversation… This can take up to a minute when waking up.
+          </Text>
         </View>
-      ))}
-    </Animated.View>
+      ) : null}
+      <Animated.View style={[styles.bubbles, { opacity }]} accessible accessibilityLabel="Loading messages" accessibilityRole="progressbar">
+        {BUBBLES.map((b, i) => (
+          <View key={i} style={[styles.bubbleRow, b.mine && styles.bubbleRowMine]}>
+            {!b.mine ? <SkeletonBlock style={styles.bubbleAvatar} /> : null}
+            <SkeletonBlock style={{ width: b.width, height: 18 + b.lines * 18, borderRadius: radius.bubble }} />
+          </View>
+        ))}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -235,6 +266,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   block: { backgroundColor: colors.surface3, borderRadius: 6 },
   skeletonRow: { paddingHorizontal: gutter, paddingVertical: 14, gap: 12 },
+  skeletonNotice: { paddingVertical: space[3], paddingHorizontal: gutter, alignItems: 'center' },
+  skeletonNoticeText: { textAlign: 'center' },
   skeletonHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   skeletonLines: { flex: 1, gap: 8 },
   skeletonMedia: { height: 200, borderRadius: radius.md },
