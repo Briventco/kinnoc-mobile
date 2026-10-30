@@ -6,6 +6,7 @@ const entry = (id: string, over: Partial<InboxEntry> = {}): InboxEntry => ({
   community: { id, slug: id, name: id, monogram: 'X', photoUrl: null, memberCount: 3, category: 'Design', visibility: 'public' },
   lastMessage: { seq: 5, senderName: 'Ada', isMine: false, text: 'old', kind: 'text', sentAt: '2026-10-24T10:00:00.000Z' },
   unreadCount: 0,
+  receipts: null,
   hasMention: false,
   isPinned: false,
   isMuted: false,

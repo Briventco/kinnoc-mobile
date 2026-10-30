@@ -1,7 +1,8 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
+import { skipToken, useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 import { ApiError } from '@/api/errors';
+import type { ConversationEvent } from '@/api/realtime';
 import type {
   Community,
   CommunityBrowseFilter,
@@ -11,6 +12,7 @@ import type {
   Message,
   Person,
   Reaction,
+  Receipts,
 } from '@/api/types';
 import { env } from '@/config/env';
 import { nextCursor, snapshot } from '@/lib/cache';
@@ -19,6 +21,7 @@ import { api, realtime } from '@/services';
 
 import { withLiveMessage } from './inboxCache';
 import { markDeleted, maxSeq, mergeMessages, patchMessage, type MessagePages } from './messageCache';
+import { mergeReceipts } from './receipts';
 
 /**
  * The inbox is live for the communities it lists (`useInboxLive`); polling picks up new
@@ -33,8 +36,15 @@ const isCode = (error: unknown, ...codes: string[]) => error instanceof ApiError
 /** Errors that mean the viewer can no longer read a community's conversation. */
 export const lostAccess = (error: unknown) => isCode(error, 'MEMBERSHIP_REQUIRED', 'COMMUNITY_NOT_FOUND');
 
+/** The inbox, recording each conversation's receipts on the way. */
+export async function loadInbox() {
+  const entries = await api.communities.inbox();
+  entries.forEach((e) => setReceipts(e.community.id, e.receipts));
+  return entries;
+}
+
 export function useInbox() {
-  return useQuery({ queryKey: keys.inbox, queryFn: () => api.communities.inbox(), refetchInterval: INBOX_POLL_MS });
+  return useQuery({ queryKey: keys.inbox, queryFn: loadInbox, refetchInterval: INBOX_POLL_MS });
 }
 
 export function useBrowseCommunities(filter: CommunityBrowseFilter) {
@@ -50,10 +60,11 @@ export function useCategories() {
   return useQuery({ queryKey: keys.categories, queryFn: () => api.communities.categories(), staleTime: 60 * 60_000 });
 }
 
-export function useCommunity(id: string) {
+export function useCommunity(id: string, enabled = true) {
   return useQuery({
     queryKey: keys.community(id),
     queryFn: () => api.communities.get(id),
+    enabled,
     // A community the viewer cannot see stays hidden; retrying will not change that.
     retry: (count, error) => !(error instanceof ApiError && (error.code === 'not_found' || error.code === 'forbidden')) && count < 2,
   });
@@ -234,13 +245,43 @@ export function useMarkCommunityRead() {
   });
 }
 
+/* ---------- Receipts ---------- */
+
+/** Records a conversation's Delivered and Seen positions, keeping the highest seen so far. */
+export function setReceipts(communityId: string, next: Receipts | null | undefined) {
+  if (!next) return;
+  queryClient.setQueryData<Receipts | null>(keys.receipts(communityId), (current) => mergeReceipts(current, next));
+}
+
+/** Receipts for the inbox row as well as the conversation, from live events. */
+function setLiveReceipts(communityId: string, next: Receipts | null) {
+  setReceipts(communityId, next);
+  if (next) patchInbox(communityId, (e) => ({ ...e, receipts: mergeReceipts(e.receipts, next) }));
+}
+
+/**
+ * The conversation's receipt positions, from message pages, the inbox and live events. Null until
+ * the backend has provided any (the delivery line then shows one tick).
+ */
+export function useReceipts(communityId: string): Receipts | null {
+  const { data } = useQuery<Receipts | null>({ queryKey: keys.receipts(communityId), queryFn: skipToken, staleTime: Infinity });
+  return data ?? null;
+}
+
 /* ---------- Conversation ---------- */
+
+/** One page of history, recording the conversation's receipts on the way. */
+export async function loadMessages(communityId: string, cursor: string | null) {
+  const page = await api.messages.list(communityId, cursor);
+  setReceipts(communityId, page.receipts);
+  return page;
+}
 
 /** Message history, newest first, paging back through older messages. Members only. */
 export function useMessages(communityId: string, enabled: boolean) {
   return useInfiniteQuery({
     queryKey: keys.messages(communityId),
-    queryFn: ({ pageParam }) => api.messages.list(communityId, pageParam),
+    queryFn: ({ pageParam }) => loadMessages(communityId, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextCursor,
     enabled,
@@ -274,6 +315,7 @@ export function catchUp(communityId: string, serverLastSeq: number) {
     do {
       const page = await api.messages.since(communityId, known, cursor);
       merge(communityId, page.items);
+      setReceipts(communityId, page.receipts);
       cursor = page.nextCursor;
     } while (cursor);
   })()
@@ -397,36 +439,7 @@ export function useConversationEvents(communityId: string, enabled: boolean, onL
   const [typing, setTyping] = useState<string[]>([]);
   useEffect(() => {
     if (!enabled) return;
-    const unsubscribe = realtime.subscribe(communityId, (event) => {
-      switch (event.type) {
-        case 'message':
-          merge(communityId, [event.message]);
-          break;
-        case 'deleted':
-          queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) => markDeleted(d, event.messageId));
-          break;
-        case 'reactions':
-          queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) =>
-            patchMessage(d, event.messageId, (m) => ({ ...m, reactions: event.reactions })),
-          );
-          break;
-        case 'typing':
-          setTyping(event.names);
-          break;
-        case 'read':
-          patchInbox(communityId, (e) => ({ ...e, unreadCount: 0, hasMention: false }));
-          break;
-        case 'subscribed':
-          void catchUp(communityId, event.lastSeq);
-          break;
-        case 'ended':
-          onLostAccess?.();
-          break;
-        case 'error':
-          if (event.code === 'MEMBERSHIP_REQUIRED' || event.code === 'COMMUNITY_NOT_FOUND') onLostAccess?.();
-          break;
-      }
-    });
+    const unsubscribe = realtime.subscribe(communityId, (event) => applyConversationEvent(communityId, event, { onTyping: setTyping, onLostAccess }));
     return () => {
       unsubscribe();
       setTyping([]);
@@ -435,6 +448,45 @@ export function useConversationEvents(communityId: string, enabled: boolean, onL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityId, enabled]);
   return { typing };
+}
+
+/** Merges one realtime event of an open conversation into the cache. */
+export function applyConversationEvent(
+  communityId: string,
+  event: ConversationEvent,
+  handlers: { onTyping: (names: string[]) => void; onLostAccess?: () => void },
+) {
+  switch (event.type) {
+    case 'message':
+      merge(communityId, [event.message]);
+      break;
+    case 'deleted':
+      queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) => markDeleted(d, event.messageId));
+      break;
+    case 'reactions':
+      queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) => patchMessage(d, event.messageId, (m) => ({ ...m, reactions: event.reactions })));
+      break;
+    case 'typing':
+      handlers.onTyping(event.names);
+      break;
+    case 'read':
+      patchInbox(communityId, (e) => ({ ...e, unreadCount: 0, hasMention: false }));
+      break;
+    case 'subscribed':
+      setLiveReceipts(communityId, event.receipts);
+      void catchUp(communityId, event.lastSeq);
+      break;
+    case 'receipts':
+      setLiveReceipts(communityId, event.receipts);
+      break;
+    case 'ended':
+      queryClient.removeQueries({ queryKey: keys.receipts(communityId) });
+      handlers.onLostAccess?.();
+      break;
+    case 'error':
+      if (event.code === 'MEMBERSHIP_REQUIRED' || event.code === 'COMMUNITY_NOT_FOUND') handlers.onLostAccess?.();
+      break;
+  }
 }
 
 /**
@@ -446,33 +498,39 @@ export function useInboxLive(communityIds: string[]) {
   const key = [...communityIds].sort().join(',');
   useEffect(() => {
     if (!realtime.live || !key) return;
-    const unsubscribes = key.split(',').map((id) =>
-      realtime.subscribe(id, (event) => {
-        switch (event.type) {
-          case 'message':
-            merge(id, [event.message]);
-            queryClient.setQueryData<InboxEntry[]>(keys.inbox, (entries) => withLiveMessage(entries, id, event.message));
-            break;
-          case 'deleted':
-            queryClient.setQueryData<MessagePages>(keys.messages(id), (d) => markDeleted(d, event.messageId));
-            break;
-          case 'typing':
-            patchInbox(id, (e) => ({ ...e, typing: event.names }));
-            break;
-          case 'read':
-            patchInbox(id, (e) => ({ ...e, unreadCount: 0, hasMention: false }));
-            break;
-          case 'ended':
-            void queryClient.invalidateQueries({ queryKey: keys.inbox });
-            break;
-        }
-      }),
-    );
+    const unsubscribes = key.split(',').map((id) => realtime.subscribe(id, (event) => applyInboxEvent(id, event)));
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
       queryClient.setQueryData<InboxEntry[]>(keys.inbox, (entries) => entries?.map((e) => (e.typing.length ? { ...e, typing: [] } : e)));
     };
   }, [key]);
+}
+
+/** Merges one realtime event into the inbox row of its community (and its cached conversation). */
+export function applyInboxEvent(id: string, event: ConversationEvent) {
+  switch (event.type) {
+    case 'message':
+      merge(id, [event.message]);
+      queryClient.setQueryData<InboxEntry[]>(keys.inbox, (entries) => withLiveMessage(entries, id, event.message));
+      break;
+    case 'deleted':
+      queryClient.setQueryData<MessagePages>(keys.messages(id), (d) => markDeleted(d, event.messageId));
+      break;
+    case 'typing':
+      patchInbox(id, (e) => ({ ...e, typing: event.names }));
+      break;
+    case 'read':
+      patchInbox(id, (e) => ({ ...e, unreadCount: 0, hasMention: false }));
+      break;
+    case 'subscribed':
+    case 'receipts':
+      setLiveReceipts(id, event.receipts);
+      break;
+    case 'ended':
+      queryClient.removeQueries({ queryKey: keys.receipts(id) });
+      void queryClient.invalidateQueries({ queryKey: keys.inbox });
+      break;
+  }
 }
 
 /** The live connection's state, for a quiet "Connecting…" hint. */

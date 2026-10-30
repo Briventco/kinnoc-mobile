@@ -73,6 +73,30 @@ export function SkeletonList({
   );
 }
 
+/** Bubbles shaped like a conversation, for chat history that is still loading. */
+const BUBBLES: { mine: boolean; width: `${number}%`; lines: number }[] = [
+  { mine: false, width: '62%', lines: 2 },
+  { mine: false, width: '44%', lines: 1 },
+  { mine: true, width: '52%', lines: 1 },
+  { mine: false, width: '70%', lines: 3 },
+  { mine: true, width: '38%', lines: 1 },
+  { mine: true, width: '58%', lines: 2 },
+];
+
+export function MessageSkeleton() {
+  const opacity = usePulse();
+  return (
+    <Animated.View style={[styles.bubbles, { opacity }]} accessible accessibilityLabel="Loading messages" accessibilityRole="progressbar">
+      {BUBBLES.map((b, i) => (
+        <View key={i} style={[styles.bubbleRow, b.mine && styles.bubbleRowMine]}>
+          {!b.mine ? <SkeletonBlock style={styles.bubbleAvatar} /> : null}
+          <SkeletonBlock style={{ width: b.width, height: 18 + b.lines * 18, borderRadius: radius.bubble }} />
+        </View>
+      ))}
+    </Animated.View>
+  );
+}
+
 /* ---------- Banners and errors ---------- */
 
 type BannerTone = 'warning' | 'success' | 'offline' | 'info';
@@ -204,6 +228,10 @@ export function Hairline({ inset = 0, style }: { inset?: number; style?: StylePr
 }
 
 const styles = StyleSheet.create({
+  bubbles: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: gutter, paddingBottom: space[3], gap: space[2] },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleAvatar: { width: 28, height: 28, borderRadius: 14 },
   flex: { flex: 1 },
   block: { backgroundColor: colors.surface3, borderRadius: 6 },
   skeletonRow: { paddingHorizontal: gutter, paddingVertical: 14, gap: 12 },

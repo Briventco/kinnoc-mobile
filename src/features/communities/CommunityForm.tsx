@@ -15,6 +15,7 @@ import { Pressable } from '@/components/Pressable';
 import { Banner, ErrorState } from '@/components/States';
 import { Text } from '@/components/Text';
 import { pickImages } from '@/lib/media';
+import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
 import { colors, communityRadius, gutter, radius, space } from '@/theme';
 
 import { useCategories, useUploadCommunityImage } from './hooks';
@@ -124,7 +125,7 @@ export function CommunityForm({ title, submitLabel, initial, initialImages, subm
   const uploading = avatar.uploading || cover.uploading;
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]} behavior={KEYBOARD_BEHAVIOR}>
       <View style={styles.header}>
         <IconButton icon={X} label="Cancel" onPress={() => router.back()} />
         <Text variant="screenTitle" style={styles.title} accessibilityRole="header">

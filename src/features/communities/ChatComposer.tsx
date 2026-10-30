@@ -10,6 +10,7 @@ import { ActionSheet } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { pickImages } from '@/lib/media';
+import { useBottomBarInset } from '@/lib/useKeyboardVisible';
 import { colors, fonts, gutter, radius, space } from '@/theme';
 
 const QUICK_EMOJI = ['😀', '😂', '😍', '🙏', '👍', '🙌', '🔥', '🎉'];
@@ -27,6 +28,8 @@ interface ChatComposerProps {
 
 /** The API's limit for one message. */
 const MAX_LENGTH = 4000;
+/** The same message sent again this soon is a double tap, not a second message. */
+const DOUBLE_TAP_MS = 1000;
 
 /** Attach, a growing field with emoji, then Photo — replaced by Send once there is something to send. */
 export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, onTyping, bottomInset, allowAttachments = true }: ChatComposerProps) {
@@ -35,7 +38,11 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
   const [attachMenu, setAttachMenu] = useState(false);
   const [emoji, setEmoji] = useState(false);
   const input = useRef<TextInputInstance>(null);
+  // Two taps in one frame both see the text before it was cleared; the second is dropped here,
+  // or the same message would go out twice (with two client IDs, so the server keeps both).
+  const lastSent = useRef({ key: '', at: 0 });
   const canSend = text.trim().length > 0 || attachments.length > 0;
+  const paddingBottom = useBottomBarInset(bottomInset);
 
   const add = async (source: 'library' | 'camera') => {
     const uris = await pickImages(source, 4 - attachments.length);
@@ -44,6 +51,10 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
 
   const send = () => {
     if (!canSend) return;
+    const key = `${text.trim()}\n${attachments.join('\n')}`;
+    const now = Date.now();
+    if (key === lastSent.current.key && now - lastSent.current.at < DOUBLE_TAP_MS) return;
+    lastSent.current = { key, at: now };
     onSend(text.trim(), attachments);
     setText('');
     setAttachments([]);
@@ -51,7 +62,7 @@ export function ChatComposer({ communityName, replyTo, onCancelReply, onSend, on
   };
 
   return (
-    <View style={[styles.root, { paddingBottom: Math.max(bottomInset, space[2]) }]}>
+    <View style={[styles.root, { paddingBottom }]}>
       {replyTo ? (
         <View style={styles.replyBar}>
           <Reply size={18} color={colors.primary} strokeWidth={2} />

@@ -1,18 +1,21 @@
 import { Image } from 'expo-image';
 import { Check, CheckCheck, CircleAlert, Clock, Play, Reply } from 'lucide-react-native';
 import { memo, useEffect, useState } from 'react';
-import { Animated, Linking, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 
-import type { Message } from '@/api/types';
+import type { DeliveryStatus, Message } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { formatTime } from '@/lib/format';
+import { openExternal } from '@/lib/links';
 import { colors, gutter, radius, space } from '@/theme';
 
 interface MessageBubbleProps {
   message: Message;
+  /** For the viewer's own messages: the tick to show, from the conversation's receipts. Defaults to `message.status`. */
+  status?: DeliveryStatus;
   /** First message in a run from the same sender: show avatar, name and time. */
   showHeader: boolean;
   onLongPress: (message: Message) => void;
@@ -21,7 +24,7 @@ interface MessageBubbleProps {
 }
 
 /** Other people on a light neutral, you in navy. Name and time sit above incoming bubbles. */
-export const MessageBubble = memo(function MessageBubble({ message, showHeader, onLongPress, onReact, onRetry }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, status, showHeader, onLongPress, onReact, onRetry }: MessageBubbleProps) {
   const mine = message.isMine;
   const failed = message.status === 'failed';
   const deleted = !!message.deletedAt;
@@ -79,7 +82,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
       {message.link ? (
         <Pressable
           style={[styles.inset, styles.link]}
-          onPress={() => void Linking.openURL(message.link!.url)}
+          onPress={() => openExternal(message.link!.url)}
           accessibilityRole="link"
           accessibilityLabel={`${message.link.title}, ${message.link.domain}`}
         >
@@ -111,7 +114,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
         <View style={styles.mineCol}>
           {bubble}
           <Reactions message={message} onReact={onReact} alignEnd />
-          {deleted ? null : <DeliveryLine message={message} onRetry={onRetry} />}
+          {deleted ? null : <DeliveryLine message={message} status={status ?? message.status} onRetry={onRetry} />}
         </View>
       ) : (
         <View style={styles.theirsRow}>
@@ -160,8 +163,16 @@ function Reactions({ message, onReact, alignEnd }: { message: Message; onReact: 
   );
 }
 
-function DeliveryLine({ message, onRetry }: { message: Message; onRetry: (m: Message) => void }) {
-  if (message.status === 'failed') {
+/** Sending (clock), Sent (one tick), Delivered to everyone (two grey ticks), Seen by everyone (two blue ticks). */
+const DELIVERY: Record<Exclude<DeliveryStatus, 'failed'>, { label: string; spoken: string; Icon: typeof Check; color: string }> = {
+  sending: { label: 'Sending', spoken: 'Sending', Icon: Clock, color: colors.textTertiary },
+  sent: { label: 'Sent', spoken: 'Sent', Icon: Check, color: colors.textTertiary },
+  delivered: { label: 'Delivered', spoken: 'Delivered to everyone', Icon: CheckCheck, color: colors.textTertiary },
+  read: { label: 'Seen', spoken: 'Seen by everyone', Icon: CheckCheck, color: colors.primary },
+};
+
+function DeliveryLine({ message, status, onRetry }: { message: Message; status: DeliveryStatus; onRetry: (m: Message) => void }) {
+  if (status === 'failed') {
     return (
       <Pressable onPress={() => onRetry(message)} style={styles.delivery} accessibilityRole="button" hitSlop={8}>
         <CircleAlert size={14} color={colors.warning} strokeWidth={2} />
@@ -171,17 +182,12 @@ function DeliveryLine({ message, onRetry }: { message: Message; onRetry: (m: Mes
       </Pressable>
     );
   }
+  const { label, spoken, Icon, color } = DELIVERY[status];
   const time = formatTime(message.sentAt);
-  const [label, Icon, color] =
-    message.status === 'sending'
-      ? (['Sending', Clock, colors.textTertiary] as const)
-      : message.status === 'read'
-        ? ([`${time} · Read`, CheckCheck, colors.primary] as const)
-        : ([`${time} · Sent`, Check, colors.textTertiary] as const);
   return (
-    <View style={styles.delivery} accessibilityLiveRegion="polite">
+    <View style={styles.delivery} accessible accessibilityLabel={status === 'sending' ? spoken : `${time}, ${spoken}`}>
       <Text variant="meta" color="textTertiary">
-        {label}
+        {status === 'sending' ? label : `${time} · ${label}`}
       </Text>
       <Icon size={15} color={color} strokeWidth={2} />
     </View>

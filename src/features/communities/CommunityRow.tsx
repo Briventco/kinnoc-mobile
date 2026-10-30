@@ -1,4 +1,4 @@
-import { AtSign, BellOff, ImageIcon, Pin } from 'lucide-react-native';
+import { AtSign, BellOff, Check, CheckCheck, ImageIcon, Pin } from 'lucide-react-native';
 import { memo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -10,16 +10,22 @@ import { Text } from '@/components/Text';
 import { formatInboxTime, plural } from '@/lib/format';
 import { colors, gutter, size, space } from '@/theme';
 
+import { statusForSeq } from './receipts';
+
 interface InboxRowProps {
   entry: InboxEntry;
   onPress: () => void;
   onLongPress: () => void;
 }
 
+const TICK_LABEL = { sent: 'sent', delivered: 'delivered to everyone', read: 'seen by everyone' } as const;
+
 /** One line of the inbox, built to scan like a chat app and show what is alive. */
 export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: InboxRowProps) {
-  const { community, lastMessage, unreadCount, hasMention, isMuted, isPinned, typing } = entry;
+  const { community, lastMessage, unreadCount, hasMention, isMuted, isPinned, typing, receipts } = entry;
   const unread = unreadCount > 0;
+  // Your own last message shows its tick, as in the conversation.
+  const tick = lastMessage?.isMine && lastMessage.seq != null ? statusForSeq(lastMessage.seq, receipts) : null;
   const typingText = typing.length ? `${typing.length === 1 ? typing[0] : `${typing[0]} and ${typing.length - 1} more`} ${typing.length === 1 ? 'is' : 'are'} typing…` : null;
 
   const a11y = [
@@ -29,6 +35,7 @@ export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: 
     unread ? `${unreadCount} unread` : null,
     hasMention ? 'you were mentioned' : null,
     typingText ?? (lastMessage ? `${lastMessage.senderName}: ${lastMessage.kind === 'photo' ? 'Sent a photo' : lastMessage.text}` : 'No messages yet'),
+    tick && !typingText ? TICK_LABEL[tick] : null,
     lastMessage ? formatInboxTime(lastMessage.sentAt) : null,
   ]
     .filter(Boolean)
@@ -67,6 +74,13 @@ export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: 
             </Text>
           ) : lastMessage ? (
             <View style={[styles.preview, styles.shrink]}>
+              {tick ? (
+                tick === 'sent' ? (
+                  <Check size={16} color={colors.textTertiary} strokeWidth={2} />
+                ) : (
+                  <CheckCheck size={16} color={tick === 'read' ? colors.primary : colors.textTertiary} strokeWidth={2} />
+                )
+              ) : null}
               <Text variant="preview" color={unread ? 'text' : 'textTertiary'} numberOfLines={1} style={styles.shrink}>
                 <Text variant="preview" color={unread ? 'text' : 'textSecondary'} style={styles.sender}>
                   {lastMessage.senderName}:

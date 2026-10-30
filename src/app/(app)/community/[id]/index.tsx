@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight, EllipsisVertical, Lock, Pin, Reply, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, EllipsisVertical, Lock, Pin, Reply, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable as RNPressable, StyleSheet, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
@@ -12,7 +12,7 @@ import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
 import { ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
-import { CenteredSpinner, ErrorState, ListFooter } from '@/components/States';
+import { CenteredSpinner, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { ChatComposer } from '@/features/communities/ChatComposer';
@@ -25,18 +25,23 @@ import {
   useMessages,
   useReact,
   useRealtimeStatus,
+  useReceipts,
   useSendMessage,
 } from '@/features/communities/hooks';
 import { accessCopy, MembershipActions } from '@/features/communities/MembershipActions';
 import { DateSeparator, MessageBubble, TypingBubble } from '@/features/communities/MessageBubble';
+import { deliveryStatus } from '@/features/communities/receipts';
 import { useMe } from '@/features/profile/hooks';
 import { flatten } from '@/lib/cache';
 import { formatDateSeparator, isSameDay, plural, uid } from '@/lib/format';
 import { keys, queryClient } from '@/lib/query';
 import { api, realtime } from '@/services';
+import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
 import { colors, gutter, radius, shadow, space } from '@/theme';
 
 const GROUP_GAP_MS = 3 * 60_000;
+/** Within this distance of the newest message, new messages keep it in view. */
+const NEAR_LATEST_PX = 120;
 const REACTIONS = ['👍', '🙌', '🔥', '❤️', '😂', '🎉'];
 
 export default function ConversationScreen() {
@@ -80,7 +85,7 @@ export default function ConversationScreen() {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {header()}
-        <CenteredSpinner />
+        <MessageSkeleton />
       </View>
     );
   }
@@ -123,6 +128,8 @@ function JoinGate({ community }: { community: Community }) {
 type Row = { type: 'message'; message: Message; showHeader: boolean } | { type: 'date'; key: string; label: string };
 
 const senderKey = (m: Message) => (m.isMine ? 'me' : (m.sender?.username ?? 'former'));
+/** Stable across the optimistic bubble and the server's copy of your own message. */
+const messageKey = (m: Message) => m.clientId ?? m.id;
 
 function Conversation({ community, renderHeader }: { community: Community; renderHeader: (subtitle?: string) => React.ReactNode }) {
   const insets = useSafeAreaInsets();
@@ -138,6 +145,10 @@ function Conversation({ community, renderHeader }: { community: Community; rende
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Message | null>(null);
   const lastTyping = useRef(0);
+  const listRef = useRef<FlatList<Row>>(null);
+  // Whether the newest message is on screen, and (when it is not) the newest one the reader saw.
+  const [atLatest, setAtLatest] = useState(true);
+  const [lastSeenKey, setLastSeenKey] = useState<string | null>(null);
 
   // Removed, left on another device, or the community became invisible: show the gate again.
   const onLostAccess = useCallback(() => {
@@ -148,12 +159,23 @@ function Conversation({ community, renderHeader }: { community: Community; rende
   }, [community.id, community.name, toast]);
 
   const { typing } = useConversationEvents(community.id, true, onLostAccess);
+  const receipts = useReceipts(community.id);
 
   useEffect(() => {
     if (messages.isError && lostAccess(messages.error)) void queryClient.invalidateQueries({ queryKey: keys.community(community.id) });
   }, [messages.isError, messages.error, community.id]);
 
   const list = flatten(messages.data); // newest first
+  const unseen = atLatest || !lastSeenKey ? 0 : Math.max(0, list.findIndex((m) => messageKey(m) === lastSeenKey));
+
+  // The list is inverted: offset 0 is the newest message.
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const near = e.nativeEvent.contentOffset.y < NEAR_LATEST_PX;
+    if (near === atLatest) return;
+    setAtLatest(near);
+    setLastSeenKey(near ? null : list[0] ? messageKey(list[0]) : null);
+  };
+  const scrollToLatest = () => listRef.current?.scrollToOffset({ offset: 0, animated: true });
 
   // Mark read up to the newest message the server has, whenever it changes while open.
   const newestId = list.find((m) => m.seq !== null)?.id;
@@ -201,11 +223,14 @@ function Conversation({ community, renderHeader }: { community: Community; rende
       },
     );
     setReplyTo(null);
+    // Your own message always comes into view, even when you were reading older ones.
+    scrollToLatest();
   };
 
   const retry = useCallback(
     (m: Message) =>
       send.mutate({
+        // The same client ID, so the server stores it once even if the first try got through.
         clientId: m.clientId ?? m.id,
         text: m.text,
         replyTo: m.replyTo,
@@ -221,7 +246,7 @@ function Conversation({ community, renderHeader }: { community: Community; rende
   const connectingLabel = realtime.live && (connection === 'connecting' || connection === 'offline') ? 'Connecting…' : undefined;
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={KEYBOARD_BEHAVIOR}>
       {renderHeader(typingLabel ?? connectingLabel)}
       {community.pinned ? (
         <Pressable
@@ -242,7 +267,7 @@ function Conversation({ community, renderHeader }: { community: Community; rende
       ) : null}
 
       {messages.isPending ? (
-        <CenteredSpinner />
+        <MessageSkeleton />
       ) : messages.isError && !list.length ? (
         lostAccess(messages.error) ? (
           <CenteredSpinner />
@@ -250,42 +275,72 @@ function Conversation({ community, renderHeader }: { community: Community; rende
           <ErrorState error={messages.error} onRetry={() => messages.refetch()} />
         )
       ) : (
-        <FlatList
-          inverted
-          data={rows}
-          keyExtractor={(r) => (r.type === 'date' ? r.key : (r.message.clientId ?? r.message.id))}
-          renderItem={({ item }) =>
-            item.type === 'date' ? (
-              <DateSeparator label={item.label} />
-            ) : (
-              <MessageBubble message={item.message} showHeader={item.showHeader} onLongPress={setActionsFor} onReact={onReact} onRetry={retry} />
-            )
-          }
-          ListHeaderComponent={
-            <>
-              {typing.length ? <TypingBubble names={typing} /> : null}
-              <View style={{ height: space[3] }} />
-            </>
-          }
-          ListFooterComponent={
-            messages.hasNextPage ? (
-              <ListFooter loading={messages.isFetchingNextPage} />
-            ) : list.length ? (
-              <Text variant="meta" color="textTertiary" style={styles.start}>
-                This is the start of {community.name}.
-              </Text>
-            ) : (
-              <Text variant="post" color="textSecondary" style={styles.start}>
-                No messages yet. Say hello to the community.
-              </Text>
-            )
-          }
-          onEndReached={() => messages.hasNextPage && !messages.isFetchingNextPage && messages.fetchNextPage()}
-          onEndReachedThreshold={0.4}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        />
+        <View style={styles.flex}>
+          <FlatList
+            ref={listRef}
+            inverted
+            data={rows}
+            keyExtractor={(r) => (r.type === 'date' ? r.key : messageKey(r.message))}
+            renderItem={({ item }) =>
+              item.type === 'date' ? (
+                <DateSeparator label={item.label} />
+              ) : (
+                <MessageBubble
+                  message={item.message}
+                  status={deliveryStatus(item.message, receipts)}
+                  showHeader={item.showHeader}
+                  onLongPress={setActionsFor}
+                  onReact={onReact}
+                  onRetry={retry}
+                />
+              )
+            }
+            ListHeaderComponent={
+              <>
+                {typing.length ? <TypingBubble names={typing} /> : null}
+                <View style={{ height: space[3] }} />
+              </>
+            }
+            ListFooterComponent={
+              messages.hasNextPage ? (
+                <ListFooter loading={messages.isFetchingNextPage} />
+              ) : list.length ? (
+                <Text variant="meta" color="textTertiary" style={styles.start}>
+                  This is the start of {community.name}.
+                </Text>
+              ) : (
+                <Text variant="post" color="textSecondary" style={styles.start}>
+                  No messages yet. Say hello to the community.
+                </Text>
+              )
+            }
+            onEndReached={() => messages.hasNextPage && !messages.isFetchingNextPage && messages.fetchNextPage()}
+            onEndReachedThreshold={0.4}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            onScroll={onScroll}
+            scrollEventThrottle={100}
+            // Keeps what the reader is looking at in place when messages arrive or older pages load,
+            // except near the newest message, where a new one scrolls into view.
+            maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: NEAR_LATEST_PX }}
+          />
+          {!atLatest ? (
+            <Pressable
+              onPress={() => scrollToLatest()}
+              style={styles.jump}
+              accessibilityRole="button"
+              accessibilityLabel={unseen ? `${plural(unseen, 'new message')}. Jump to latest` : 'Jump to latest message'}
+              pressedOpacity={0.8}
+            >
+              {unseen ? (
+                <Text variant="label" color="primary">
+                  {unseen > 99 ? '99+' : unseen} new
+                </Text>
+              ) : null}
+              <ChevronDown size={20} color={colors.text} strokeWidth={2} />
+            </Pressable>
+          ) : null}
+        </View>
       )}
 
       <ChatComposer
@@ -435,6 +490,21 @@ const styles = StyleSheet.create({
   },
   pinnedTitle: { fontSize: 14 },
   start: { textAlign: 'center', padding: space[6] },
+  jump: {
+    position: 'absolute',
+    right: gutter,
+    bottom: space[3],
+    minWidth: 44,
+    height: 44,
+    paddingHorizontal: space[3],
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space[1],
+    ...shadow.float,
+  },
   gate: { padding: space[6], gap: space[3] },
   gateActions: { marginTop: space[2] },
   scrim: { flex: 1, backgroundColor: colors.scrim },
