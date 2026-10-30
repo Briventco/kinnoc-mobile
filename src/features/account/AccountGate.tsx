@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,13 +22,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const { status, signOut } = useAuth();
   const account = useAccount(status === 'signedIn');
 
-  if (account.isPending) {
-    return (
-      <SafeAreaView style={styles.root}>
-        <CenteredSpinner />
-      </SafeAreaView>
-    );
-  }
+  if (account.isPending) return <Connecting onSignOut={() => void signOut()} />;
   if (account.isError) {
     const blocked = account.error instanceof ApiError && account.error.code === 'forbidden';
     return (
@@ -43,6 +37,30 @@ export function AccountGate({ children }: { children: ReactNode }) {
   }
   if (!account.data.profile) return <CreateProfile />;
   return <>{children}</>;
+}
+
+/** After this long, loading explains itself and offers a way out instead of spinning silently. */
+const SLOW_MS = 8000;
+
+function Connecting({ onSignOut }: { onSignOut: () => void }) {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), SLOW_MS);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <SafeAreaView style={styles.root}>
+      <CenteredSpinner />
+      {slow ? (
+        <View style={styles.slow} accessibilityLiveRegion="polite">
+          <Text variant="post" color="textSecondary" style={styles.slowText}>
+            Still connecting. This can take up to a minute when the server is waking up or your connection is slow.
+          </Text>
+          <Button label="Sign out" variant="text" onPress={onSignOut} />
+        </View>
+      ) : null}
+    </SafeAreaView>
+  );
 }
 
 /** Onboarding: the API keeps usernames on the profile, not in sign-up metadata. */
@@ -109,4 +127,6 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   problem: { padding: gutter, gap: space[4], paddingTop: space[8] },
   error: { paddingHorizontal: 0 },
+  slow: { paddingHorizontal: gutter, paddingBottom: space[8], gap: space[2], alignItems: 'center' },
+  slowText: { textAlign: 'center' },
 });

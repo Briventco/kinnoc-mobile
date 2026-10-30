@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { queryClient } from '@/lib/query';
 import { auth, realtime, setMockViewer, setUnauthorizedHandler } from '@/services';
 
+import { mustClearCache } from './session';
 import type { AuthSession, SignUpInput, SignUpResult } from './types';
 
 type Status = 'restoring' | 'signedOut' | 'signedIn';
@@ -22,16 +23,19 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('restoring');
   const [session, setSession] = useState<AuthSession | null>(null);
+  const userId = useRef<string | null>(null);
 
   const apply = useCallback((next: AuthSession | null) => {
     setSession(next);
     setMockViewer(next ? { displayName: next.user.displayName, username: next.user.username } : null);
-    if (!next) {
-      // Close the chat connection and drop every cached response, so the next person on this
-      // device sees none of it.
+    const nextId = next?.user.id ?? null;
+    // Signed out, or a different account took over without a sign-out in between: close the chat
+    // connection and drop every cached response, so no one sees the previous account's data.
+    if (mustClearCache(userId.current, nextId)) {
       realtime.reset();
       queryClient.clear();
     }
+    userId.current = nextId;
     setStatus(next ? 'signedIn' : 'signedOut');
   }, []);
 

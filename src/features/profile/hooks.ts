@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 
-import type { ProfileUpdate } from '@/api/types';
+import type { Profile, ProfileUpdate } from '@/api/types';
 import { nextCursor } from '@/lib/cache';
 import { keys, queryClient } from '@/lib/query';
 import { api } from '@/services';
@@ -27,12 +27,43 @@ export function useUserCommunities(userId: string | undefined) {
   });
 }
 
+/** Everything that shows people's photos: feeds, posts, comments, members, chats and profiles. */
+const SHOWS_PHOTOS = [keys.feedAll, ['post'], ['community'], keys.inbox, ['messages'], ['profile']] as const;
+
+function usePhotoChange(change: (localUri?: string) => Promise<Profile>) {
+  return useMutation({
+    mutationFn: change,
+    onSuccess: (profile) => {
+      queryClient.setQueryData(keys.me, profile);
+      for (const queryKey of SHOWS_PHOTOS) void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+}
+
+/** Uploads a picked image as your profile photo. */
+export function useSetAvatar() {
+  return usePhotoChange((localUri) => api.profile.setAvatar(localUri!));
+}
+
+export function useRemoveAvatar() {
+  return usePhotoChange(() => api.profile.removeAvatar());
+}
+
+/**
+ * Saves the profile form and, where the backend has an interest catalogue, the chosen interests
+ * (`interestSlugs`, only when they changed). Two requests: if the second fails, the first has
+ * still been saved, so the profile is reloaded either way.
+ */
 export function useUpdateProfile() {
   return useMutation({
-    mutationFn: (changes: ProfileUpdate) => api.profile.update(changes),
+    mutationFn: async ({ interestSlugs, ...changes }: ProfileUpdate & { interestSlugs?: string[] }) => {
+      const profile = await api.profile.update(changes);
+      return interestSlugs ? api.profile.setInterests(interestSlugs) : profile;
+    },
     onSuccess: (profile) => {
       queryClient.setQueryData(keys.me, profile);
       void queryClient.invalidateQueries({ queryKey: keys.feedAll });
     },
+    onError: () => void queryClient.invalidateQueries({ queryKey: keys.me }),
   });
 }

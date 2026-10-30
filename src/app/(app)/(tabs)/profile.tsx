@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import { Link2, MapPin, Share, SlidersHorizontal } from 'lucide-react-native';
 import { useState } from 'react';
 import { FlatList, RefreshControl, Share as RNShare, ScrollView, StyleSheet, View } from 'react-native';
@@ -20,6 +19,7 @@ import { SavedRow, savedKey } from '@/features/saved/SavedRow';
 import { flatten } from '@/lib/cache';
 import { formatCount } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { openExternal } from '@/lib/links';
 import { api } from '@/services';
 import { colors, gutter, radius, space, type } from '@/theme';
 
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
         )}
         <View style={styles.statsRow}>
           {website ? (
-            <Pressable onPress={() => void WebBrowser.openBrowserAsync(website)} style={styles.inline} accessibilityRole="link" hitSlop={8}>
+            <Pressable onPress={() => openExternal(website)} style={styles.inline} accessibilityRole="link" hitSlop={8}>
               <Link2 size={16} color={colors.primary} strokeWidth={2} />
               <Text variant="name" color="primary">
                 {p.website}
@@ -125,7 +125,7 @@ export default function ProfileScreen() {
               </View>
             ))}
           </View>
-        ) : api.capabilities.profileDetails ? (
+        ) : api.capabilities.profileDetails || api.capabilities.interestCatalogue ? (
           <Button variant="text" label="Add interests" onPress={() => router.push('/settings/edit-profile')} style={styles.alignStart} />
         ) : (
           <Text variant="preview" color="textTertiary">
