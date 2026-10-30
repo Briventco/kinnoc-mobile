@@ -20,7 +20,13 @@ async function ensure(kind: 'library' | 'camera') {
 /** One photo, cropped square in the system editor (profile photos). Returns its local URI, or null if cancelled. */
 export async function pickSquareImage(source: 'library' | 'camera'): Promise<string | null> {
   if (!(await ensure(source))) return null;
-  const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.8, allowsEditing: true, aspect: [1, 1] };
+  const options: ImagePicker.ImagePickerOptions = {
+    mediaTypes: ['images'],
+    quality: 0.8,
+    allowsEditing: true,
+    aspect: [1, 1],
+    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Automatic,
+  };
   try {
     const result =
       source === 'camera' && Platform.OS !== 'web'
@@ -40,6 +46,7 @@ export async function pickImages(source: 'library' | 'camera', limit = 4): Promi
     quality: 0.8,
     allowsMultipleSelection: (source === 'library' || Platform.OS === 'web') && limit > 1,
     selectionLimit: limit,
+    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Automatic,
   };
   try {
     const result =

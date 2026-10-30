@@ -10,6 +10,7 @@ import { CenteredSpinner, ErrorState } from '@/components/States';
 import { Text } from '@/components/Text';
 import { AuthScaffold, AuthSwitch } from '@/features/auth/AuthScaffold';
 import { validateName, validateUsername } from '@/features/auth/validation';
+import { useCategories } from '@/features/communities/hooks';
 import { useSetInterests } from '@/features/profile/hooks';
 import { InterestPicker } from '@/features/profile/InterestPicker';
 import { api } from '@/services';
@@ -142,7 +143,10 @@ function CreateProfile({ onCreated }: { onCreated: () => void }) {
 /** Optional, once, after the profile is created: interests shape Discover and the profile. */
 function PickInterests({ onDone }: { onDone: () => void }) {
   const save = useSetInterests();
+  const categories = useCategories();
   const [picked, setPicked] = useState<string[]>([]);
+  const hasNoCategories = categories.isSuccess && categories.data.length === 0;
+
   return (
     <AuthScaffold
       back={false}
@@ -152,7 +156,17 @@ function PickInterests({ onDone }: { onDone: () => void }) {
     >
       {save.isError ? <ErrorState error={save.error} style={styles.error} /> : null}
       <InterestPicker picked={picked} onChange={setPicked} label={null} />
-      <Button label="Continue" size="large" loading={save.isPending} disabled={!picked.length} onPress={() => save.mutate(picked, { onSuccess: onDone })} />
+      {hasNoCategories ? (
+        <Button label="Continue to Kinnoc" size="large" onPress={onDone} />
+      ) : (
+        <Button
+          label="Continue"
+          size="large"
+          loading={save.isPending}
+          disabled={!picked.length}
+          onPress={() => save.mutate(picked, { onSuccess: onDone })}
+        />
+      )}
     </AuthScaffold>
   );
 }

@@ -51,14 +51,13 @@ const WEB_APP_URL = 'https://web.kinnoc.app';
  * On web, resolves to the actual browser origin (e.g. https://web.kinnoc.app) so links work
  * across production and development environments.
  */
-export function getAuthRedirectUrl(): string | undefined {
+export function getAuthRedirectUrl(): string {
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location?.origin) {
       return `${window.location.origin}/`;
     }
-    return `${WEB_APP_URL}/`;
   }
-  return undefined;
+  return `${WEB_APP_URL}/`;
 }
 
 /**

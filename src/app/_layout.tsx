@@ -8,10 +8,12 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/auth/AuthProvider';
+import { consumeAuthUrlFeedback } from '@/auth/callback';
 import { BrandSplash } from '@/components/BrandSplash';
+import { PwaInstallPrompt } from '@/components/PwaInstallPrompt';
 import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
-import { ToastProvider } from '@/components/Toast';
+import { ToastProvider, useToast } from '@/components/Toast';
 import { env } from '@/config/env';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/OnboardingProvider';
 import { queryClient } from '@/lib/query';
@@ -45,8 +47,19 @@ export default function RootLayout() {
 function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   const { status } = useAuth();
   const { completed } = useOnboarding();
+  const toast = useToast();
   const [splashHidden, setSplashHidden] = useState(false);
   const ready = fontsReady && status !== 'restoring' && completed !== null;
+
+  useEffect(() => {
+    if (!ready) return;
+    const feedback = consumeAuthUrlFeedback();
+    if (feedback) {
+      toast.show({
+        message: feedback.message,
+      });
+    }
+  }, [ready, toast]);
 
   const hideNativeSplash = useCallback(() => {
     if (splashHidden) return;
@@ -80,6 +93,7 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
           <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
         </Stack.Protected>
       </Stack>
+      <PwaInstallPrompt />
     </View>
   );
 }
