@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { initials } from '@/lib/format';
@@ -13,13 +14,15 @@ interface PersonAvatarProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** People are always circles. No photo: Bricolage initials in navy on mist. */
+/** People are always circles. No photo, or one that fails to load: Bricolage initials in navy on mist. */
 export function Avatar({ name, uri, size = 40, style }: PersonAvatarProps) {
   const box = { width: size, height: size, borderRadius: size / 2 };
+  // Remembering which URI failed means a new photo is tried again.
+  const [failed, setFailed] = useState<string | null>(null);
   return (
     <View style={[styles.person, box, style]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {uri ? (
-        <Image source={{ uri }} style={box} contentFit="cover" transition={150} />
+      {uri && uri !== failed ? (
+        <Image source={{ uri }} style={box} contentFit="cover" transition={150} onError={() => setFailed(uri)} />
       ) : (
         <Text
           style={{ fontFamily: fonts.display600, fontSize: Math.round(size * 0.38), lineHeight: Math.round(size * 0.46) }}

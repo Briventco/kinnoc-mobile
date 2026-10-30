@@ -16,6 +16,14 @@ async function ensure(kind: 'library' | 'camera') {
   return false;
 }
 
+/** One photo, cropped square in the system editor (profile photos). Returns its local URI, or null if cancelled. */
+export async function pickSquareImage(source: 'library' | 'camera'): Promise<string | null> {
+  if (!(await ensure(source))) return null;
+  const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.8, allowsEditing: true, aspect: [1, 1] };
+  const result = source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+  return result.canceled ? null : (result.assets[0]?.uri ?? null);
+}
+
 /** Returns local URIs of the chosen photos, or [] if cancelled. */
 export async function pickImages(source: 'library' | 'camera', limit = 4): Promise<string[]> {
   if (!(await ensure(source))) return [];

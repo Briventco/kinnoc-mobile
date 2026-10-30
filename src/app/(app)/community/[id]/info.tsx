@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Bell, BellOff, EyeOff, Globe, Inbox, Lock, MailPlus, MessageSquareText, Pencil, Pin, Users } from 'lucide-react-native';
+import { Bell, BellOff, EyeOff, Globe, Inbox, Lock, MailPlus, MessageSquareText, Newspaper, Pencil, Pin, Users } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -71,7 +71,12 @@ export default function CommunityInfo() {
   const VisIcon = vis.icon;
   // Members of PUBLIC communities are visible to any signed-in account; otherwise members only.
   const canSeeMembers = member || c.visibility === 'public';
-  const push = (pathname: '/community/[id]/members' | '/community/[id]/manage' | '/community/[id]/edit', params: Record<string, string> = {}) =>
+  // Posts of public, open communities are readable by anyone; all others are members-only.
+  const canSeePosts = api.capabilities.feed && (member || (c.visibility === 'public' && c.joinPolicy === 'open'));
+  const push = (
+    pathname: '/community/[id]/members' | '/community/[id]/manage' | '/community/[id]/edit' | '/community/[id]/posts',
+    params: Record<string, string> = {},
+  ) =>
     router.push({ pathname, params: { id: c.id, ...params } });
 
   return (
@@ -137,6 +142,12 @@ export default function CommunityInfo() {
         ) : null}
 
         <View style={styles.rows}>
+          {canSeePosts ? (
+            <>
+              <Hairline />
+              <SettingRow icon={Newspaper} label="Posts" detail={member ? 'Updates, questions and links from members' : 'What members are sharing'} onPress={() => push('/community/[id]/posts')} />
+            </>
+          ) : null}
           {canSeeMembers ? (
             <>
               <Hairline />
