@@ -50,6 +50,7 @@ export default function ForgotPassword() {
       {formError ? <Banner tone="warning" message={formError} /> : null}
       <TextField
         label="Email"
+        placeholder="you@example.com"
         value={email}
         onChangeText={setEmail}
         onBlur={() => email && setError(validateEmail(email))}

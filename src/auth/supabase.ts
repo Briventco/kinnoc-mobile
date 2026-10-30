@@ -1,7 +1,6 @@
 /**
  * Supabase Auth adapter. Uses only the public project URL and anon key; the backend verifies
  * the access token it receives. Sessions are kept in the device keychain via secureStorage.
- * Not yet tested against the Kinnoc Supabase project.
  */
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
@@ -43,8 +42,25 @@ function toAuthError(error: { code?: string; message: string; status?: number })
   return new AuthError('unknown', 'Something went wrong. Try again.');
 }
 
-export function createSupabaseAuth(url: string, anonKey: string): AuthService {
-  const client: SupabaseClient = createClient(url, anonKey, {
+/** Auth requests (sign-in, token refresh) give up after this, so a stalled network cannot hold startup. */
+const AUTH_TIMEOUT_MS = 20_000;
+
+/**
+ * `fetch` with a time limit for Supabase Auth calls. Storage uploads keep no limit: a large photo
+ * on a slow connection can legitimately take longer. A timed-out refresh fails like being offline.
+ */
+export const authFetch: typeof fetch = (input, init) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (!url.includes('/auth/v1/') || init?.signal) return fetch(input, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  return fetch(input, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
+/** Creates the Supabase client used for sign-in and for uploads to Storage with the user's session. */
+export function createSupabaseClient(url: string, anonKey: string): SupabaseClient {
+  return createClient(url, anonKey, {
+    global: { fetch: authFetch },
     auth: {
       storage: secureStorage,
       autoRefreshToken: true,
@@ -52,7 +68,9 @@ export function createSupabaseAuth(url: string, anonKey: string): AuthService {
       detectSessionInUrl: false,
     },
   });
+}
 
+export function createSupabaseAuth(client: SupabaseClient): AuthService {
   // Refresh tokens only while the app is in the foreground, as Supabase recommends for React Native.
   AppState.addEventListener('change', (state) => {
     if (state === 'active') client.auth.startAutoRefresh();
@@ -88,9 +106,20 @@ export function createSupabaseAuth(url: string, anonKey: string): AuthService {
       if (error) throw toAuthError(error);
     },
     async signOut() {
-      await client.auth.signOut();
+      const { error } = await client.auth.signOut();
+      // supabase-js keeps the stored session when it cannot read it first (an expired token it
+      // failed to refresh, say offline). Remove it here, or the next launch would sign back in.
+      if (error) {
+        const { storageKey } = client.auth as unknown as { storageKey?: string };
+        if (storageKey) await secureStorage.removeItem(storageKey).catch(() => undefined);
+      }
     },
-    async getAccessToken() {
+    async getAccessToken(options) {
+      if (options?.refresh) {
+        const { data, error } = await client.auth.refreshSession();
+        // A refresh can fail offline; the caller then treats the session as still unknown.
+        if (!error) return data.session?.access_token ?? null;
+      }
       const { data } = await client.auth.getSession();
       return data.session?.access_token ?? null;
     },

@@ -1,8 +1,8 @@
-import { AtSign, BellOff, ImageIcon, Pin } from 'lucide-react-native';
-import { memo } from 'react';
+import { AtSign, BellOff, Check, CheckCheck, ImageIcon, Pin } from 'lucide-react-native';
+import { memo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import type { CommunitySummary, InboxEntry, MembershipStatus } from '@/api/types';
+import type { Community, InboxEntry } from '@/api/types';
 import { CommunityAvatar, CountBadge } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { Pressable } from '@/components/Pressable';
@@ -10,16 +10,22 @@ import { Text } from '@/components/Text';
 import { formatInboxTime, plural } from '@/lib/format';
 import { colors, gutter, size, space } from '@/theme';
 
+import { statusForSeq } from './receipts';
+
 interface InboxRowProps {
   entry: InboxEntry;
   onPress: () => void;
   onLongPress: () => void;
 }
 
+const TICK_LABEL = { sent: 'sent', delivered: 'delivered to everyone', read: 'seen by everyone' } as const;
+
 /** One line of the inbox, built to scan like a chat app and show what is alive. */
 export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: InboxRowProps) {
-  const { community, lastMessage, unreadCount, hasMention, isMuted, isPinned, typing } = entry;
+  const { community, lastMessage, unreadCount, hasMention, isMuted, isPinned, typing, receipts } = entry;
   const unread = unreadCount > 0;
+  // Your own last message shows its tick, as in the conversation.
+  const tick = lastMessage?.isMine && lastMessage.seq != null ? statusForSeq(lastMessage.seq, receipts) : null;
   const typingText = typing.length ? `${typing.length === 1 ? typing[0] : `${typing[0]} and ${typing.length - 1} more`} ${typing.length === 1 ? 'is' : 'are'} typing…` : null;
 
   const a11y = [
@@ -29,6 +35,7 @@ export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: 
     unread ? `${unreadCount} unread` : null,
     hasMention ? 'you were mentioned' : null,
     typingText ?? (lastMessage ? `${lastMessage.senderName}: ${lastMessage.kind === 'photo' ? 'Sent a photo' : lastMessage.text}` : 'No messages yet'),
+    tick && !typingText ? TICK_LABEL[tick] : null,
     lastMessage ? formatInboxTime(lastMessage.sentAt) : null,
   ]
     .filter(Boolean)
@@ -67,6 +74,13 @@ export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: 
             </Text>
           ) : lastMessage ? (
             <View style={[styles.preview, styles.shrink]}>
+              {tick ? (
+                tick === 'sent' ? (
+                  <Check size={16} color={colors.textTertiary} strokeWidth={2} />
+                ) : (
+                  <CheckCheck size={16} color={tick === 'read' ? colors.primary : colors.textTertiary} strokeWidth={2} />
+                )
+              ) : null}
               <Text variant="preview" color={unread ? 'text' : 'textTertiary'} numberOfLines={1} style={styles.shrink}>
                 <Text variant="preview" color={unread ? 'text' : 'textSecondary'} style={styles.sender}>
                   {lastMessage.senderName}:
@@ -102,17 +116,32 @@ export const InboxRow = memo(function InboxRow({ entry, onPress, onLongPress }: 
 });
 
 interface BrowseRowProps {
-  community: CommunitySummary & { description?: string };
-  membership: MembershipStatus;
+  community: Community;
   onPress: () => void;
   onJoin: () => void;
   joining: boolean;
 }
 
-/** A community to discover: identity, category and members, and a Join action. */
-export function BrowseRow({ community, membership, onPress, onJoin, joining }: BrowseRowProps) {
+/** How a community is entered, in a few words for the row's second line. */
+function accessLabel(c: Community) {
+  if (c.visibility === 'private') return 'Private';
+  if (c.joinPolicy === 'approval') return 'Approval needed';
+  if (c.joinPolicy === 'invite-only') return 'Invite only';
+  return null;
+}
+
+/** A community to discover: identity, category and members, and the action that fits the viewer. */
+export function BrowseRow({ community, onPress, onJoin, joining }: BrowseRowProps) {
+  const access = accessLabel(community);
+  const { membership, joinPolicy } = community;
   return (
-    <Pressable onPress={onPress} style={styles.row} accessibilityRole="button" accessibilityLabel={`${community.name}, ${community.category}, ${plural(community.memberCount, 'member')}`} pressedOpacity={0.7}>
+    <Pressable
+      onPress={onPress}
+      style={styles.row}
+      accessibilityRole="button"
+      accessibilityLabel={[community.name, community.category, plural(community.memberCount, 'member'), access].filter(Boolean).join(', ')}
+      pressedOpacity={0.7}
+    >
       <CommunityAvatar id={community.id} monogram={community.monogram} uri={community.photoUrl} size={size.communityLg} />
       <View style={styles.body}>
         <Text variant="rowTitle" numberOfLines={1}>
@@ -120,23 +149,50 @@ export function BrowseRow({ community, membership, onPress, onJoin, joining }: B
         </Text>
         <Text variant="preview" color="textTertiary" numberOfLines={1}>
           {community.category} · {plural(community.memberCount, 'member')}
-          {community.visibility === 'private' ? ' · Private' : ''}
+          {access ? ` · ${access}` : ''}
         </Text>
       </View>
       {membership === 'member' ? (
         <Button label="Joined" variant="joined" size="small" onPress={onPress} />
       ) : membership === 'pending' ? (
         <Button label="Requested" variant="joined" size="small" onPress={onPress} />
-      ) : (
+      ) : membership === 'invited' ? (
+        <Button label="Invited" variant="join" size="small" onPress={onPress} accessibilityHint="Opens the invitation" />
+      ) : joinPolicy === 'invite-only' ? null : (
         <Button
-          label={community.visibility === 'private' ? 'Request' : 'Join'}
+          label={joinPolicy === 'approval' ? 'Request' : 'Join'}
           variant="join"
           size="small"
           loading={joining}
           onPress={onJoin}
-          accessibilityHint={`Joins ${community.name}`}
+          accessibilityHint={joinPolicy === 'approval' ? `Asks to join ${community.name}` : `Joins ${community.name}`}
         />
       )}
+    </Pressable>
+  );
+}
+
+/** An invitation waiting for the viewer, or a request they sent, above the inbox. */
+export function PendingRow({ community, onPress, children }: { community: Community; onPress: () => void; children?: ReactNode }) {
+  const invited = community.membership === 'invited';
+  return (
+    <Pressable
+      onPress={onPress}
+      style={styles.row}
+      accessibilityRole="button"
+      accessibilityLabel={invited ? `Invitation to ${community.name}` : `Request to join ${community.name}, waiting for approval`}
+      pressedOpacity={0.7}
+    >
+      <CommunityAvatar id={community.id} monogram={community.monogram} uri={community.photoUrl} size={size.communityLg} />
+      <View style={styles.body}>
+        <Text variant="rowTitle" numberOfLines={1}>
+          {community.name}
+        </Text>
+        <Text variant="preview" color={invited ? 'primary' : 'textTertiary'} numberOfLines={1}>
+          {invited ? 'You’re invited to join' : 'Waiting for approval'}
+        </Text>
+      </View>
+      {children}
     </Pressable>
   );
 }

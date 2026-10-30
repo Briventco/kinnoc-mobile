@@ -18,13 +18,15 @@ import { UpdateBand } from '@/features/feed/UpdateBand';
 import { StoryRow } from '@/features/stories/StoryRow';
 import { useUnreadNotificationCount } from '@/features/notifications/hooks';
 import { useMe } from '@/features/profile/hooks';
-import { flatten } from '@/lib/cache';
+import { flattenUnique } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, gutter, size, space } from '@/theme';
 
+// Following people is not offered by every backend; without it there is no Following feed.
 const SCOPES: { key: FeedScope; label: string }[] = [
   { key: 'for-you', label: 'For you' },
-  { key: 'following', label: 'Following' },
+  ...(api.capabilities.social ? [{ key: 'following' as const, label: 'Following' }] : []),
   { key: 'communities', label: 'Communities' },
 ];
 
@@ -109,21 +111,25 @@ function Composer() {
 function FeedList({ scope }: { scope: FeedScope }) {
   const feed = useFeed(scope);
   const pull = usePullToRefresh(feed.refetch);
-  const items = flatten(feed.data);
+  const items = flattenUnique(feed.data, (item) => `${item.kind}:${item.id}`);
 
   const renderItem = ({ item }: { item: FeedItem }) =>
     item.kind === 'post' ? <PostRow post={item} /> : <UpdateBand update={item} />;
 
   const header = (
     <>
-      {scope === 'for-you' ? (
+      {scope === 'for-you' && api.capabilities.social ? (
         <>
           <StoryRow />
           <Hairline />
         </>
       ) : null}
-      <Composer />
-      <Hairline />
+      {api.capabilities.feed ? (
+        <>
+          <Composer />
+          <Hairline />
+        </>
+      ) : null}
     </>
   );
 
@@ -160,7 +166,8 @@ function FeedList({ scope }: { scope: FeedScope }) {
         )
       }
       ListFooterComponent={<ListFooter loading={feed.isFetchingNextPage} />}
-      onEndReached={() => feed.hasNextPage && !feed.isFetchingNextPage && feed.fetchNextPage()}
+      // One page at a time, and not while a refresh is reloading the pages already shown.
+      onEndReached={() => feed.hasNextPage && !feed.isFetching && feed.fetchNextPage()}
       onEndReachedThreshold={0.6}
       refreshControl={
         <RefreshControl {...pull} tintColor={colors.textTertiary} />

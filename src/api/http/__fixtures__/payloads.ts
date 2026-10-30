@@ -1,0 +1,105 @@
+/** API payloads as the Kinnoc API returns them, for tests. */
+import type { ApiComment, ApiCommunity, ApiEvent, ApiMessage, ApiPost } from '../mappers';
+
+export const apiCommunity = (over: Partial<ApiCommunity> = {}): ApiCommunity => ({
+  id: '0b0f4f5e-6d43-4a39-9f0e-1f8b9d6a0c11',
+  slug: 'design-lab',
+  name: 'Design Lab',
+  description: 'People who design things.',
+  category: { slug: 'design', name: 'Design' },
+  avatarUrl: null,
+  coverUrl: 'https://example.supabase.co/storage/v1/object/public/community-media/u/cover.jpg',
+  visibility: 'PUBLIC',
+  joinPolicy: 'OPEN',
+  memberCount: 12,
+  createdAt: '2026-10-24T10:00:00.000Z',
+  updatedAt: '2026-10-24T10:00:00.000Z',
+  membership: null,
+  ...over,
+});
+
+export const apiMessage = (over: Partial<ApiMessage> = {}): ApiMessage => ({
+  id: 'a1d0c1f2-0000-4000-8000-000000000001',
+  communityId: '0b0f4f5e-6d43-4a39-9f0e-1f8b9d6a0c11',
+  seq: 7,
+  clientId: null,
+  sender: { username: 'ada', displayName: 'Ada Lovelace', avatarUrl: null },
+  isMine: false,
+  text: 'Hello',
+  replyTo: null,
+  sentAt: '2026-10-24T10:00:00.000Z',
+  deletedAt: null,
+  ...over,
+});
+
+export const apiPost = (over: Partial<ApiPost> = {}): ApiPost => ({
+  id: '8c1e5f9a-0b5e-4a8e-9f0e-3d2b1c4a5e6f',
+  author: { username: 'ada', displayName: 'Ada Lovelace', avatarUrl: null },
+  community: { id: '0b0f4f5e-6d43-4a39-9f0e-1f8b9d6a0c11', slug: 'design-lab', name: 'Design Lab' },
+  text: "We're hiring a designer.",
+  media: [
+    {
+      url: 'https://example.supabase.co/storage/v1/object/public/post-media/u1/9b2f.jpg',
+      mimeType: 'image/jpeg',
+      width: 1600,
+      height: 900,
+      alt: 'Our office',
+    },
+  ],
+  link: { url: 'https://kinnoc.com/jobs/42', domain: 'kinnoc.com' },
+  likeCount: 12,
+  commentCount: 3,
+  likedByMe: false,
+  isMine: false,
+  createdAt: '2026-10-25T09:00:00.000Z',
+  editedAt: null,
+  ...over,
+});
+
+export const apiComment = (over: Partial<ApiComment> = {}): ApiComment => ({
+  id: 'c41a0000-0000-4000-8000-000000000001',
+  postId: '8c1e5f9a-0b5e-4a8e-9f0e-3d2b1c4a5e6f',
+  parentId: null,
+  author: { username: 'grace', displayName: 'Grace Hopper', avatarUrl: null },
+  text: 'Applied!',
+  isMine: false,
+  replyCount: 2,
+  createdAt: '2026-10-25T09:05:00.000Z',
+  editedAt: null,
+  deletedAt: null,
+  ...over,
+});
+
+/** Shaped like the dev API's first published event (GET /events, 29 Oct 2026). */
+export const apiEvent = (over: Partial<ApiEvent> = {}): ApiEvent => ({
+  id: 'bb61fe0e-0436-414c-bd03-cea100c76ae8',
+  slug: 'test',
+  title: 'testing',
+  summary: 'hello, testing',
+  description: "hello testing events to ensure it's works",
+  coverImageUrl: 'https://x.supabase.co/storage/v1/object/public/event-media/a/poster.png',
+  organizerName: 'caleb',
+  organizerLogoUrl: 'https://x.supabase.co/storage/v1/object/public/event-media/a/logo.jpg',
+  category: 'CONFERENCE',
+  tags: ['tech'],
+  startAt: '2026-10-31T21:48:00.000Z',
+  endAt: '2026-11-01T09:48:00.000Z',
+  timezone: 'Africa/Lagos',
+  isOnline: false,
+  venueName: 'osogbo',
+  address: 'uniosun',
+  city: 'Badagry',
+  state: 'Lagos',
+  country: 'NI',
+  onlineEventUrl: null,
+  registrationUrl: 'https://kinnoc-web-admin.vercel.app/events/new',
+  registrationDeadline: '2026-10-30T09:48:00.000Z',
+  capacity: 200,
+  priceAmount: 100000,
+  currency: 'NGN',
+  status: 'PUBLISHED',
+  isPast: false,
+  cancelledAt: null,
+  cancellationReason: null,
+  ...over,
+});

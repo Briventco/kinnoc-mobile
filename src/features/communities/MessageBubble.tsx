@@ -1,18 +1,21 @@
 import { Image } from 'expo-image';
 import { Check, CheckCheck, CircleAlert, Clock, Play, Reply } from 'lucide-react-native';
-import { memo } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import { memo, useEffect, useState } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 
-import type { Message } from '@/api/types';
+import type { DeliveryStatus, Message } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { formatTime } from '@/lib/format';
+import { openExternal } from '@/lib/links';
 import { colors, gutter, radius, space } from '@/theme';
 
 interface MessageBubbleProps {
   message: Message;
+  /** For the viewer's own messages: the tick to show, from the conversation's receipts. Defaults to `message.status`. */
+  status?: DeliveryStatus;
   /** First message in a run from the same sender: show avatar, name and time. */
   showHeader: boolean;
   onLongPress: (message: Message) => void;
@@ -21,22 +24,35 @@ interface MessageBubbleProps {
 }
 
 /** Other people on a light neutral, you in navy. Name and time sit above incoming bubbles. */
-export const MessageBubble = memo(function MessageBubble({ message, showHeader, onLongPress, onReact, onRetry }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, status, showHeader, onLongPress, onReact, onRetry }: MessageBubbleProps) {
   const mine = message.isMine;
   const failed = message.status === 'failed';
+  const deleted = !!message.deletedAt;
+  const senderName = message.sender?.displayName ?? 'Former member';
 
   const bubble = (
     <Pressable
-      onLongPress={() => !failed && message.status !== 'sending' && onLongPress(message)}
+      onLongPress={() => !failed && !deleted && message.status !== 'sending' && onLongPress(message)}
       onPress={failed ? () => onRetry(message) : undefined}
       delayLongPress={300}
       pressedOpacity={0.85}
       accessibilityRole={failed ? 'button' : undefined}
-      accessibilityLabel={`${mine ? 'You' : message.sender.displayName}, ${formatTime(message.sentAt)}: ${message.text}${failed ? '. Not sent. Double tap to retry.' : ''}`}
-      accessibilityHint={failed ? undefined : 'Long press to react or reply'}
-      style={[styles.bubble, mine ? styles.mine : styles.theirs, !showHeader && (mine ? styles.mineCont : styles.theirsCont), failed && styles.failed]}
+      accessibilityLabel={`${mine ? 'You' : senderName}, ${formatTime(message.sentAt)}: ${deleted ? 'Message deleted' : message.text}${failed ? '. Not sent. Double tap to retry.' : ''}`}
+      accessibilityHint={failed || deleted ? undefined : 'Long press for actions'}
+      style={[
+        styles.bubble,
+        mine ? styles.mine : styles.theirs,
+        !showHeader && (mine ? styles.mineCont : styles.theirsCont),
+        failed && styles.failed,
+        deleted && styles.deleted,
+      ]}
     >
-      {message.replyTo ? (
+      {deleted ? (
+        <Text variant="message" color="textTertiary">
+          {mine ? 'You deleted this message' : 'Message deleted'}
+        </Text>
+      ) : null}
+      {message.replyTo && !deleted ? (
         <View style={styles.inset}>
           <View style={styles.replyHead}>
             <Reply size={14} color={colors.brandNavy} strokeWidth={2} />
@@ -49,7 +65,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
           </Text>
         </View>
       ) : null}
-      {message.text ? (
+      {message.text && !deleted ? (
         <Text variant="message" color={mine ? 'onPrimary' : 'text'} selectable>
           {message.text}
         </Text>
@@ -66,7 +82,7 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
       {message.link ? (
         <Pressable
           style={[styles.inset, styles.link]}
-          onPress={() => void Linking.openURL(message.link!.url)}
+          onPress={() => openExternal(message.link!.url)}
           accessibilityRole="link"
           accessibilityLabel={`${message.link.title}, ${message.link.domain}`}
         >
@@ -98,18 +114,18 @@ export const MessageBubble = memo(function MessageBubble({ message, showHeader, 
         <View style={styles.mineCol}>
           {bubble}
           <Reactions message={message} onReact={onReact} alignEnd />
-          <DeliveryLine message={message} onRetry={onRetry} />
+          {deleted ? null : <DeliveryLine message={message} status={status ?? message.status} onRetry={onRetry} />}
         </View>
       ) : (
         <View style={styles.theirsRow}>
           <View style={styles.avatarCol}>
-            {showHeader ? <Avatar name={message.sender.displayName} uri={message.sender.avatarUrl} size={32} /> : null}
+            {showHeader ? <Avatar name={senderName} uri={message.sender?.avatarUrl} size={32} /> : null}
           </View>
           <View style={styles.theirsCol}>
             {showHeader ? (
               <Text variant="meta" color="textTertiary" style={styles.senderLine}>
                 <Text variant="name" style={styles.senderName}>
-                  {message.sender.displayName}
+                  {senderName}
                 </Text>{' '}
                 {formatTime(message.sentAt)}
               </Text>
@@ -147,8 +163,16 @@ function Reactions({ message, onReact, alignEnd }: { message: Message; onReact: 
   );
 }
 
-function DeliveryLine({ message, onRetry }: { message: Message; onRetry: (m: Message) => void }) {
-  if (message.status === 'failed') {
+/** Sending (clock), Sent (one tick), Delivered to everyone (two grey ticks), Seen by everyone (two blue ticks). */
+const DELIVERY: Record<Exclude<DeliveryStatus, 'failed'>, { label: string; spoken: string; Icon: typeof Check; color: string }> = {
+  sending: { label: 'Sending', spoken: 'Sending', Icon: Clock, color: colors.textTertiary },
+  sent: { label: 'Sent', spoken: 'Sent', Icon: Check, color: colors.textTertiary },
+  delivered: { label: 'Delivered', spoken: 'Delivered to everyone', Icon: CheckCheck, color: colors.textTertiary },
+  read: { label: 'Seen', spoken: 'Seen by everyone', Icon: CheckCheck, color: colors.primary },
+};
+
+function DeliveryLine({ message, status, onRetry }: { message: Message; status: DeliveryStatus; onRetry: (m: Message) => void }) {
+  if (status === 'failed') {
     return (
       <Pressable onPress={() => onRetry(message)} style={styles.delivery} accessibilityRole="button" hitSlop={8}>
         <CircleAlert size={14} color={colors.warning} strokeWidth={2} />
@@ -158,19 +182,54 @@ function DeliveryLine({ message, onRetry }: { message: Message; onRetry: (m: Mes
       </Pressable>
     );
   }
+  const { label, spoken, Icon, color } = DELIVERY[status];
   const time = formatTime(message.sentAt);
-  const [label, Icon, color] =
-    message.status === 'sending'
-      ? (['Sending', Clock, colors.textTertiary] as const)
-      : message.status === 'read'
-        ? ([`${time} · Read`, CheckCheck, colors.primary] as const)
-        : ([`${time} · Sent`, Check, colors.textTertiary] as const);
   return (
-    <View style={styles.delivery} accessibilityLiveRegion="polite">
+    <View style={styles.delivery} accessible accessibilityLabel={status === 'sending' ? spoken : `${time}, ${spoken}`}>
       <Text variant="meta" color="textTertiary">
-        {label}
+        {status === 'sending' ? label : `${time} · ${label}`}
       </Text>
       <Icon size={15} color={color} strokeWidth={2} />
+    </View>
+  );
+}
+
+/** Three dots that pulse in turn, in an incoming bubble, while other members type. */
+export function TypingBubble({ names }: { names: string[] }) {
+  const [dots] = useState(() => [0, 1, 2].map(() => new Animated.Value(0.3)));
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.stagger(
+        160,
+        dots.map((v) =>
+          Animated.sequence([
+            Animated.timing(v, { toValue: 1, duration: 280, useNativeDriver: true }),
+            Animated.timing(v, { toValue: 0.3, duration: 280, useNativeDriver: true }),
+          ]),
+        ),
+      ),
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [dots]);
+
+  if (!names.length) return null;
+  const label = names.length === 1 ? `${names[0]} is typing` : names.length === 2 ? `${names[0]} and ${names[1]} are typing` : `${names[0]} and ${names.length - 1} others are typing`;
+  return (
+    <View style={[styles.wrap, styles.wrapGap]} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">
+      <View style={styles.theirsRow}>
+        <View style={styles.avatarCol} />
+        <View style={styles.theirsCol}>
+          <Text variant="meta" color="textTertiary" style={styles.senderLine}>
+            {label}
+          </Text>
+          <View style={[styles.bubble, styles.theirs, styles.typing]}>
+            {dots.map((opacity, i) => (
+              <Animated.View key={i} style={[styles.dot, { opacity }]} />
+            ))}
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
@@ -204,6 +263,7 @@ const styles = StyleSheet.create({
   theirsCont: { borderTopLeftRadius: radius.bubble },
   mineCont: { borderTopRightRadius: radius.bubble },
   failed: { opacity: 0.7 },
+  deleted: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   inset: { backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
   replyHead: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   replyName: { fontFamily: 'Figtree_700Bold' },
@@ -217,6 +277,8 @@ const styles = StyleSheet.create({
   reactionMine: { backgroundColor: colors.primarySubtle, borderWidth: 1, borderColor: colors.primarySubtleStrong },
   reactionText: { fontFamily: 'Figtree_600SemiBold' },
   delivery: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, minHeight: 20 },
+  typing: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 14 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.textTertiary },
   separator: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingTop: space[5], paddingBottom: space[1] },
   rule: { flex: 1, height: 1, backgroundColor: colors.border },
 });

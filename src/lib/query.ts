@@ -1,7 +1,8 @@
-import { QueryClient } from '@tanstack/react-query';
+import { focusManager, QueryClient } from '@tanstack/react-query';
+import { AppState, Platform } from 'react-native';
 
 import { ApiError } from '@/api/errors';
-import type { DiscoverFilter, FeedScope } from '@/api/types';
+import type { CommunityBrowseFilter, DiscoverFilter, FeedScope, MembershipStatus } from '@/api/types';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -15,6 +16,15 @@ export const queryClient = new QueryClient({
   },
 });
 
+// React Native has no window focus: refetch stale queries when the app returns to the foreground,
+// so a reopened app does not show what it had when it was put away.
+if (Platform.OS !== 'web') {
+  focusManager.setEventListener((setFocused) => {
+    const subscription = AppState.addEventListener('change', (state) => setFocused(state === 'active'));
+    return () => subscription.remove();
+  });
+}
+
 /** Every cache key in one place, so invalidation stays consistent. */
 export const keys = {
   feed: (scope: FeedScope) => ['feed', scope] as const,
@@ -22,9 +32,18 @@ export const keys = {
   post: (id: string) => ['post', id] as const,
   comments: (id: string) => ['post', id, 'comments'] as const,
   inbox: ['inbox'] as const,
-  communityBrowse: (q: string) => ['communities', 'browse', q] as const,
+  account: ['account'] as const,
+  communityBrowse: (f: CommunityBrowseFilter) => ['communities', 'browse', f.query, f.category] as const,
+  categories: ['categories'] as const,
+  myCommunities: (status: MembershipStatus) => ['communities', 'mine', status] as const,
   community: (id: string) => ['community', id] as const,
+  communityMembers: (id: string) => ['community', id, 'members'] as const,
+  joinRequests: (id: string) => ['community', id, 'join-requests'] as const,
+  invitations: (id: string) => ['community', id, 'invitations'] as const,
   messages: (communityId: string) => ['messages', communityId] as const,
+  receipts: (communityId: string) => ['receipts', communityId] as const,
+  communityPosts: (ref: string) => ['feed', 'community', ref] as const,
+  replies: (postId: string, commentId: string) => ['post', postId, 'comments', commentId, 'replies'] as const,
   discoverHome: ['discover', 'home'] as const,
   discoverList: (filter: DiscoverFilter, q: string) => ['discover', 'list', filter, q] as const,
   discoverAll: ['discover'] as const,

@@ -1,4 +1,4 @@
-import { Bookmark, CircleAlert, CircleCheck, WifiOff } from 'lucide-react-native';
+import { Bookmark, CircleAlert, CircleCheck, Info, WifiOff } from 'lucide-react-native';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Animated, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
@@ -73,9 +73,33 @@ export function SkeletonList({
   );
 }
 
+/** Bubbles shaped like a conversation, for chat history that is still loading. */
+const BUBBLES: { mine: boolean; width: `${number}%`; lines: number }[] = [
+  { mine: false, width: '62%', lines: 2 },
+  { mine: false, width: '44%', lines: 1 },
+  { mine: true, width: '52%', lines: 1 },
+  { mine: false, width: '70%', lines: 3 },
+  { mine: true, width: '38%', lines: 1 },
+  { mine: true, width: '58%', lines: 2 },
+];
+
+export function MessageSkeleton() {
+  const opacity = usePulse();
+  return (
+    <Animated.View style={[styles.bubbles, { opacity }]} accessible accessibilityLabel="Loading messages" accessibilityRole="progressbar">
+      {BUBBLES.map((b, i) => (
+        <View key={i} style={[styles.bubbleRow, b.mine && styles.bubbleRowMine]}>
+          {!b.mine ? <SkeletonBlock style={styles.bubbleAvatar} /> : null}
+          <SkeletonBlock style={{ width: b.width, height: 18 + b.lines * 18, borderRadius: radius.bubble }} />
+        </View>
+      ))}
+    </Animated.View>
+  );
+}
+
 /* ---------- Banners and errors ---------- */
 
-type BannerTone = 'warning' | 'success' | 'offline';
+type BannerTone = 'warning' | 'success' | 'offline' | 'info';
 
 export function Banner({
   tone,
@@ -94,6 +118,7 @@ export function Banner({
     warning: { bg: colors.warningSubtle, fg: 'warning' as const, Icon: CircleAlert },
     success: { bg: colors.successSubtle, fg: 'success' as const, Icon: CircleCheck },
     offline: { bg: colors.surface3, fg: 'text' as const, Icon: WifiOff },
+    info: { bg: colors.surface2, fg: 'textSecondary' as const, Icon: Info },
   }[tone];
   return (
     <View style={[styles.banner, { backgroundColor: palette.bg }, style]} accessibilityLiveRegion="polite" accessibilityRole="alert">
@@ -109,11 +134,13 @@ export function Banner({
 /** Inline failure with Retry, for a list or screen that could not load. */
 export function ErrorState({ error, onRetry, style }: { error: unknown; onRetry?: () => void; style?: StyleProp<ViewStyle> }) {
   const offline = error instanceof ApiError && error.code === 'network';
+  // Features the backend does not offer yet are not failures, and retrying cannot help.
+  const unavailable = error instanceof ApiError && error.code === 'unsupported';
   return (
     <Banner
-      tone={offline ? 'offline' : 'warning'}
+      tone={unavailable ? 'info' : offline ? 'offline' : 'warning'}
       message={describeError(error)}
-      actionLabel={onRetry ? 'Retry' : undefined}
+      actionLabel={onRetry && !unavailable ? 'Retry' : undefined}
       onAction={onRetry}
       style={[styles.errorState, style]}
     />
@@ -201,6 +228,10 @@ export function Hairline({ inset = 0, style }: { inset?: number; style?: StylePr
 }
 
 const styles = StyleSheet.create({
+  bubbles: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: gutter, paddingBottom: space[3], gap: space[2] },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
+  bubbleRowMine: { justifyContent: 'flex-end' },
+  bubbleAvatar: { width: 28, height: 28, borderRadius: 14 },
   flex: { flex: 1 },
   block: { backgroundColor: colors.surface3, borderRadius: 6 },
   skeletonRow: { paddingHorizontal: gutter, paddingVertical: 14, gap: 12 },

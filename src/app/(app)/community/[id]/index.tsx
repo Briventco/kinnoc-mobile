@@ -1,38 +1,47 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight, EllipsisVertical, Lock, Pin, Reply } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, EllipsisVertical, Lock, Pin, Reply, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable as RNPressable, StyleSheet, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
 import type { Community, Message } from '@/api/types';
 import { CommunityAvatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
-import { Button } from '@/components/Button';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
+import { ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
-import { CenteredSpinner, ErrorState, ListFooter } from '@/components/States';
+import { CenteredSpinner, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { ChatComposer } from '@/features/communities/ChatComposer';
 import {
+  lostAccess,
   useCommunity,
   useConversationEvents,
-  useJoinCommunity,
+  useDeleteMessage,
   useMarkCommunityRead,
   useMessages,
   useReact,
+  useRealtimeStatus,
+  useReceipts,
   useSendMessage,
 } from '@/features/communities/hooks';
-import { DateSeparator, MessageBubble } from '@/features/communities/MessageBubble';
+import { accessCopy, MembershipActions } from '@/features/communities/MembershipActions';
+import { DateSeparator, MessageBubble, TypingBubble } from '@/features/communities/MessageBubble';
+import { deliveryStatus } from '@/features/communities/receipts';
 import { useMe } from '@/features/profile/hooks';
 import { flatten } from '@/lib/cache';
 import { formatDateSeparator, isSameDay, plural, uid } from '@/lib/format';
-import { realtime } from '@/services';
+import { keys, queryClient } from '@/lib/query';
+import { api, realtime } from '@/services';
+import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
 import { colors, gutter, radius, shadow, space } from '@/theme';
 
 const GROUP_GAP_MS = 3 * 60_000;
+/** Within this distance of the newest message, new messages keep it in view. */
+const NEAR_LATEST_PX = 120;
 const REACTIONS = ['👍', '🙌', '🔥', '❤️', '😂', '🎉'];
 
 export default function ConversationScreen() {
@@ -76,7 +85,7 @@ export default function ConversationScreen() {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
         {header()}
-        <CenteredSpinner />
+        <MessageSkeleton />
       </View>
     );
   }
@@ -99,48 +108,77 @@ export default function ConversationScreen() {
   return <Conversation community={community.data} renderHeader={header} />;
 }
 
-/** Non-members never receive messages; they see what the community is and how to join. */
+/** Non-members never receive messages; they see what the community is and how to get in. */
 function JoinGate({ community }: { community: Community }) {
-  const join = useJoinCommunity();
-  const toast = useToast();
-  const pending = community.membership === 'pending';
+  const copy = accessCopy(community);
   return (
     <View style={styles.gate}>
       <Lock size={22} color={colors.textTertiary} strokeWidth={1.75} />
-      <Text variant="section">{pending ? 'Your request is waiting' : `Join ${community.name} to see the conversation`}</Text>
+      <Text variant="section">{copy.title}</Text>
       <Text variant="post" color="textSecondary">
-        {pending ? "A moderator will review it. You'll get a notification when you're in." : community.description}
+        {copy.body}
       </Text>
-      {!pending ? (
-        <Button
-          label={community.visibility === 'private' ? 'Request to join' : 'Join community'}
-          loading={join.isPending}
-          onPress={() => join.mutate(community.id, { onError: (e) => toast.show({ message: `Couldn't join. ${describeError(e)}`, aboveNav: false }) })}
-          style={styles.gateButton}
-        />
-      ) : null}
+      <View style={styles.gateActions}>
+        <MembershipActions community={community} />
+      </View>
     </View>
   );
 }
 
 type Row = { type: 'message'; message: Message; showHeader: boolean } | { type: 'date'; key: string; label: string };
 
+const senderKey = (m: Message) => (m.isMine ? 'me' : (m.sender?.username ?? 'former'));
+/** Stable across the optimistic bubble and the server's copy of your own message. */
+const messageKey = (m: Message) => m.clientId ?? m.id;
+
 function Conversation({ community, renderHeader }: { community: Community; renderHeader: (subtitle?: string) => React.ReactNode }) {
   const insets = useSafeAreaInsets();
+  const toast = useToast();
   const me = useMe();
   const messages = useMessages(community.id, true);
   const send = useSendMessage(community.id, me.data);
   const react = useReact(community.id);
+  const remove = useDeleteMessage(community.id);
   const markRead = useMarkCommunityRead();
-  const { typing } = useConversationEvents(community.id, true);
+  const connection = useRealtimeStatus();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionsFor, setActionsFor] = useState<Message | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Message | null>(null);
   const lastTyping = useRef(0);
+  const listRef = useRef<FlatList<Row>>(null);
+  // Whether the newest message is on screen, and (when it is not) the newest one the reader saw.
+  const [atLatest, setAtLatest] = useState(true);
+  const [lastSeenKey, setLastSeenKey] = useState<string | null>(null);
+
+  // Removed, left on another device, or the community became invisible: show the gate again.
+  const onLostAccess = useCallback(() => {
+    toast.show({ message: `You're no longer a member of ${community.name}`, aboveNav: false });
+    queryClient.removeQueries({ queryKey: keys.messages(community.id) });
+    void queryClient.invalidateQueries({ queryKey: keys.community(community.id) });
+    void queryClient.invalidateQueries({ queryKey: keys.inbox });
+  }, [community.id, community.name, toast]);
+
+  const { typing } = useConversationEvents(community.id, true, onLostAccess);
+  const receipts = useReceipts(community.id);
+
+  useEffect(() => {
+    if (messages.isError && lostAccess(messages.error)) void queryClient.invalidateQueries({ queryKey: keys.community(community.id) });
+  }, [messages.isError, messages.error, community.id]);
 
   const list = flatten(messages.data); // newest first
+  const unseen = atLatest || !lastSeenKey ? 0 : Math.max(0, list.findIndex((m) => messageKey(m) === lastSeenKey));
 
-  // Mark read when the newest message changes while the conversation is open.
-  const newestId = list.find((m) => !m.isMine || m.status !== 'sending')?.id;
+  // The list is inverted: offset 0 is the newest message.
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const near = e.nativeEvent.contentOffset.y < NEAR_LATEST_PX;
+    if (near === atLatest) return;
+    setAtLatest(near);
+    setLastSeenKey(near ? null : list[0] ? messageKey(list[0]) : null);
+  };
+  const scrollToLatest = () => listRef.current?.scrollToOffset({ offset: 0, animated: true });
+
+  // Mark read up to the newest message the server has, whenever it changes while open.
+  const newestId = list.find((m) => m.seq !== null)?.id;
   useEffect(() => {
     if (newestId) markRead.mutate({ id: community.id, lastMessageId: newestId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -152,7 +190,10 @@ function Conversation({ community, renderHeader }: { community: Community; rende
     list.forEach((m, i) => {
       const older = list[i + 1];
       const startsRun =
-        !older || older.sender.id !== m.sender.id || new Date(m.sentAt).getTime() - new Date(older.sentAt).getTime() > GROUP_GAP_MS || !isSameDay(m.sentAt, older.sentAt);
+        !older ||
+        senderKey(older) !== senderKey(m) ||
+        new Date(m.sentAt).getTime() - new Date(older.sentAt).getTime() > GROUP_GAP_MS ||
+        !isSameDay(m.sentAt, older.sentAt);
       out.push({ type: 'message', message: m, showHeader: startsRun });
       if (!older || !isSameDay(m.sentAt, older.sentAt)) {
         out.push({ type: 'date', key: `date-${m.id}`, label: formatDateSeparator(m.sentAt) });
@@ -162,18 +203,34 @@ function Conversation({ community, renderHeader }: { community: Community; rende
   }, [list]);
 
   const sendMessage = (text: string, attachmentUris: string[]) => {
-    send.mutate({
-      clientId: uid(),
-      text,
-      attachmentUris,
-      replyTo: replyTo ? { id: replyTo.id, senderName: replyTo.isMine ? 'You' : replyTo.sender.displayName, text: replyTo.text } : null,
-    });
+    send.mutate(
+      {
+        clientId: uid(),
+        text,
+        attachmentUris,
+        replyTo: replyTo
+          ? { id: replyTo.id, senderName: replyTo.isMine ? 'You' : (replyTo.sender?.displayName ?? 'Former member'), text: replyTo.text }
+          : null,
+      },
+      {
+        onError: (e) => {
+          if (lostAccess(e)) return;
+          // The bubble shows "Not sent"; explain only what retrying will not fix.
+          if (e instanceof ApiError && (e.code === 'validation' || e.code === 'rate_limited')) {
+            toast.show({ message: describeError(e), aboveNav: false });
+          }
+        },
+      },
+    );
     setReplyTo(null);
+    // Your own message always comes into view, even when you were reading older ones.
+    scrollToLatest();
   };
 
   const retry = useCallback(
     (m: Message) =>
       send.mutate({
+        // The same client ID, so the server stores it once even if the first try got through.
         clientId: m.clientId ?? m.id,
         text: m.text,
         replyTo: m.replyTo,
@@ -184,12 +241,13 @@ function Conversation({ community, renderHeader }: { community: Community; rende
 
   const onReact = useCallback((m: Message, emoji: string, add: boolean) => react.mutate({ messageId: m.id, emoji, add }), [react]);
 
+  const canModerate = community.role === 'owner' || community.role === 'moderator';
   const typingLabel = typing.length ? `${typing[0]} ${typing.length > 1 ? `and ${typing.length - 1} more are` : 'is'} typing…` : undefined;
-  const forbidden = messages.error instanceof ApiError && messages.error.code === 'forbidden';
+  const connectingLabel = realtime.live && (connection === 'connecting' || connection === 'offline') ? 'Connecting…' : undefined;
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {renderHeader(typingLabel)}
+    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={KEYBOARD_BEHAVIOR}>
+      {renderHeader(typingLabel ?? connectingLabel)}
       {community.pinned ? (
         <Pressable
           style={styles.pinned}
@@ -209,45 +267,80 @@ function Conversation({ community, renderHeader }: { community: Community; rende
       ) : null}
 
       {messages.isPending ? (
-        <CenteredSpinner />
+        <MessageSkeleton />
       ) : messages.isError && !list.length ? (
-        forbidden ? (
-          <JoinGate community={{ ...community, membership: 'none' }} />
+        lostAccess(messages.error) ? (
+          <CenteredSpinner />
         ) : (
           <ErrorState error={messages.error} onRetry={() => messages.refetch()} />
         )
       ) : (
-        <FlatList
-          inverted
-          data={rows}
-          keyExtractor={(r) => (r.type === 'date' ? r.key : r.message.clientId ?? r.message.id)}
-          renderItem={({ item }) =>
-            item.type === 'date' ? (
-              <DateSeparator label={item.label} />
-            ) : (
-              <MessageBubble message={item.message} showHeader={item.showHeader} onLongPress={setActionsFor} onReact={onReact} onRetry={retry} />
-            )
-          }
-          ListHeaderComponent={<View style={{ height: space[3] }} />}
-          ListFooterComponent={
-            messages.hasNextPage ? (
-              <ListFooter loading={messages.isFetchingNextPage} />
-            ) : list.length ? (
-              <Text variant="meta" color="textTertiary" style={styles.start}>
-                This is the start of {community.name}.
-              </Text>
-            ) : (
-              <Text variant="post" color="textSecondary" style={styles.start}>
-                No messages yet. Say hello to the community.
-              </Text>
-            )
-          }
-          onEndReached={() => messages.hasNextPage && !messages.isFetchingNextPage && messages.fetchNextPage()}
-          onEndReachedThreshold={0.4}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        />
+        <View style={styles.flex}>
+          <FlatList
+            ref={listRef}
+            inverted
+            data={rows}
+            keyExtractor={(r) => (r.type === 'date' ? r.key : messageKey(r.message))}
+            renderItem={({ item }) =>
+              item.type === 'date' ? (
+                <DateSeparator label={item.label} />
+              ) : (
+                <MessageBubble
+                  message={item.message}
+                  status={deliveryStatus(item.message, receipts)}
+                  showHeader={item.showHeader}
+                  onLongPress={setActionsFor}
+                  onReact={onReact}
+                  onRetry={retry}
+                />
+              )
+            }
+            ListHeaderComponent={
+              <>
+                {typing.length ? <TypingBubble names={typing} /> : null}
+                <View style={{ height: space[3] }} />
+              </>
+            }
+            ListFooterComponent={
+              messages.hasNextPage ? (
+                <ListFooter loading={messages.isFetchingNextPage} />
+              ) : list.length ? (
+                <Text variant="meta" color="textTertiary" style={styles.start}>
+                  This is the start of {community.name}.
+                </Text>
+              ) : (
+                <Text variant="post" color="textSecondary" style={styles.start}>
+                  No messages yet. Say hello to the community.
+                </Text>
+              )
+            }
+            onEndReached={() => messages.hasNextPage && !messages.isFetchingNextPage && messages.fetchNextPage()}
+            onEndReachedThreshold={0.4}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            onScroll={onScroll}
+            scrollEventThrottle={100}
+            // Keeps what the reader is looking at in place when messages arrive or older pages load,
+            // except near the newest message, where a new one scrolls into view.
+            maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: NEAR_LATEST_PX }}
+          />
+          {!atLatest ? (
+            <Pressable
+              onPress={() => scrollToLatest()}
+              style={styles.jump}
+              accessibilityRole="button"
+              accessibilityLabel={unseen ? `${plural(unseen, 'new message')}. Jump to latest` : 'Jump to latest message'}
+              pressedOpacity={0.8}
+            >
+              {unseen ? (
+                <Text variant="label" color="primary">
+                  {unseen > 99 ? '99+' : unseen} new
+                </Text>
+              ) : null}
+              <ChevronDown size={20} color={colors.text} strokeWidth={2} />
+            </Pressable>
+          ) : null}
+        </View>
       )}
 
       <ChatComposer
@@ -255,7 +348,9 @@ function Conversation({ community, renderHeader }: { community: Community; rende
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
         onSend={sendMessage}
+        allowAttachments={api.capabilities.messageAttachments}
         onTyping={() => {
+          // The server drops pings more often than every 2 s; this keeps the client under that.
           const now = Date.now();
           if (now - lastTyping.current > 3000) {
             lastTyping.current = now;
@@ -267,6 +362,8 @@ function Conversation({ community, renderHeader }: { community: Community; rende
 
       <MessageActions
         message={actionsFor}
+        reactions={api.capabilities.reactions}
+        canDelete={!!actionsFor && actionsFor.seq !== null && (actionsFor.isMine || canModerate)}
         onClose={() => setActionsFor(null)}
         onReact={(emoji) => {
           if (!actionsFor) return;
@@ -274,6 +371,27 @@ function Conversation({ community, renderHeader }: { community: Community; rende
           onReact(actionsFor, emoji, !mine);
         }}
         onReply={() => setReplyTo(actionsFor)}
+        onDelete={() => setConfirmDelete(actionsFor)}
+      />
+
+      <ConfirmDialog
+        visible={!!confirmDelete}
+        title="Delete this message?"
+        body={
+          confirmDelete?.isMine
+            ? 'It will show as deleted for everyone in the community.'
+            : `You're removing ${confirmDelete?.sender?.displayName ?? 'this member'}'s message as a ${community.role}. It will show as deleted for everyone.`
+        }
+        confirmLabel="Delete"
+        destructive
+        loading={remove.isPending}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => {
+          const target = confirmDelete;
+          setConfirmDelete(null);
+          if (!target) return;
+          remove.mutate(target.id, { onError: (e) => toast.show({ message: `Couldn't delete. ${describeError(e)}`, aboveNav: false }) });
+        }}
       />
     </KeyboardAvoidingView>
   );
@@ -281,14 +399,20 @@ function Conversation({ community, renderHeader }: { community: Community; rende
 
 function MessageActions({
   message,
+  reactions,
+  canDelete,
   onClose,
   onReact,
   onReply,
+  onDelete,
 }: {
   message: Message | null;
+  reactions: boolean;
+  canDelete: boolean;
   onClose: () => void;
   onReact: (emoji: string) => void;
   onReply: () => void;
+  onDelete: () => void;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -298,36 +422,55 @@ function MessageActions({
         <Text variant="preview" color="textSecondary" numberOfLines={2} style={styles.sheetQuote}>
           {message?.text}
         </Text>
-        <View style={styles.reactionRow}>
-          {REACTIONS.map((e) => {
-            const mine = message?.reactions.find((r) => r.emoji === e)?.reactedByMe;
-            return (
-              <Pressable
-                key={e}
-                onPress={() => {
-                  onReact(e);
-                  onClose();
-                }}
-                style={[styles.reactionPick, mine && styles.reactionPickMine]}
-                accessibilityRole="button"
-                accessibilityLabel={mine ? `Remove ${e} reaction` : `React with ${e}`}
-              >
-                <Emoji size={24}>{e}</Emoji>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Pressable
-          style={styles.sheetItem}
-          onPress={() => {
-            onReply();
-            onClose();
-          }}
-          accessibilityRole="button"
-        >
-          <Reply size={20} color={colors.text} strokeWidth={1.75} />
-          <Text variant="tab">Reply</Text>
-        </Pressable>
+        {reactions ? (
+          <View style={styles.reactionRow}>
+            {REACTIONS.map((e) => {
+              const mine = message?.reactions.find((r) => r.emoji === e)?.reactedByMe;
+              return (
+                <Pressable
+                  key={e}
+                  onPress={() => {
+                    onReact(e);
+                    onClose();
+                  }}
+                  style={[styles.reactionPick, mine && styles.reactionPickMine]}
+                  accessibilityRole="button"
+                  accessibilityLabel={mine ? `Remove ${e} reaction` : `React with ${e}`}
+                >
+                  <Emoji size={24}>{e}</Emoji>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+        {message?.seq !== null ? (
+          <Pressable
+            style={styles.sheetItem}
+            onPress={() => {
+              onReply();
+              onClose();
+            }}
+            accessibilityRole="button"
+          >
+            <Reply size={20} color={colors.text} strokeWidth={1.75} />
+            <Text variant="tab">Reply</Text>
+          </Pressable>
+        ) : null}
+        {canDelete ? (
+          <Pressable
+            style={styles.sheetItem}
+            onPress={() => {
+              onClose();
+              onDelete();
+            }}
+            accessibilityRole="button"
+          >
+            <Trash2 size={20} color={colors.warning} strokeWidth={1.75} />
+            <Text variant="tab" color="warning">
+              Delete
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     </Modal>
   );
@@ -347,8 +490,23 @@ const styles = StyleSheet.create({
   },
   pinnedTitle: { fontSize: 14 },
   start: { textAlign: 'center', padding: space[6] },
+  jump: {
+    position: 'absolute',
+    right: gutter,
+    bottom: space[3],
+    minWidth: 44,
+    height: 44,
+    paddingHorizontal: space[3],
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space[1],
+    ...shadow.float,
+  },
   gate: { padding: space[6], gap: space[3] },
-  gateButton: { alignSelf: 'flex-start', marginTop: space[2] },
+  gateActions: { marginTop: space[2] },
   scrim: { flex: 1, backgroundColor: colors.scrim },
   sheet: {
     backgroundColor: colors.surface,

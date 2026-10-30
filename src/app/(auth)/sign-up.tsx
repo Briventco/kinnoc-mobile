@@ -61,6 +61,7 @@ export default function SignUp() {
       {formError ? <Banner tone="warning" message={formError} /> : null}
       <TextField
         label="Name"
+        placeholder="e.g. Ada Okafor"
         value={values.displayName}
         onChangeText={set('displayName')}
         onBlur={blur('displayName')}
@@ -71,6 +72,7 @@ export default function SignUp() {
       />
       <TextField
         label="Username"
+        placeholder="e.g. ada_okafor"
         value={values.username}
         onChangeText={set('username')}
         onBlur={blur('username')}
@@ -83,6 +85,7 @@ export default function SignUp() {
       />
       <TextField
         label="Email"
+        placeholder="you@example.com"
         value={values.email}
         onChangeText={set('email')}
         onBlur={blur('email')}
@@ -94,6 +97,7 @@ export default function SignUp() {
       />
       <TextField
         label="Password"
+        placeholder="Create a password"
         value={values.password}
         onChangeText={set('password')}
         onBlur={blur('password')}

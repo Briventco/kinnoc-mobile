@@ -1,8 +1,17 @@
 import type {
+  Account,
+  ApiCapabilities,
   AppNotification,
+  Category,
   Comment,
+  CommentInput,
   Community,
+  CommunityBrowseFilter,
+  CommunityInput,
+  CommunityMember,
+  CommunityRole,
   CommunitySummary,
+  CreateProfileInput,
   CreatePostInput,
   DiscoverFilter,
   DiscoverHome,
@@ -11,10 +20,16 @@ import type {
   FeedScope,
   ID,
   InboxEntry,
+  Invitation,
+  JoinRequest,
+  MembershipStatus,
   Message,
+  MessagePage,
   NotificationPreferences,
   Page,
   Post,
+  PostImage,
+  PostUpdate,
   Profile,
   ProfileUpdate,
   Reaction,
@@ -23,6 +38,7 @@ import type {
   SavedItem,
   SaveTarget,
   SendMessageInput,
+  UploadedImage,
 } from './types';
 
 /**
@@ -31,21 +47,70 @@ import type {
  * development. Screens only ever see this interface. See docs/api-contract.md for endpoints.
  */
 export interface KinnocApi {
+  /** What this backend supports; screens hide the rest. */
+  capabilities: ApiCapabilities;
+  account: {
+    /**
+     * Creates or syncs the caller's account after sign-in and returns it. Idempotent; call on
+     * every sign-in and app launch.
+     */
+    load(): Promise<Account>;
+    /** Onboarding: creates the caller's profile (username and display name). */
+    createProfile(input: CreateProfileInput): Promise<Account>;
+  };
   feed: {
+    /** Newest first. */
     list(scope: FeedScope, cursor: string | null): Promise<Page<FeedItem>>;
+    /** One community's posts, newest first. Members-only communities refuse non-members (`MEMBERSHIP_REQUIRED`). */
+    community(ref: string, cursor: string | null): Promise<Page<Post>>;
     get(postId: ID): Promise<Post>;
+    /** Idempotent by `clientId`. */
     create(input: CreatePostInput): Promise<Post>;
+    /** Author only. */
+    update(postId: ID, changes: PostUpdate): Promise<Post>;
+    /** The author, or the community's owners and moderators. */
     remove(postId: ID): Promise<void>;
-    setLiked(postId: ID, liked: boolean): Promise<{ likeCount: number }>;
+    /** Idempotent; returns the server's state. */
+    setLiked(postId: ID, liked: boolean): Promise<{ likeCount: number; likedByMe: boolean }>;
+    /** Top-level comments, oldest first. */
     comments(postId: ID, cursor: string | null): Promise<Page<Comment>>;
-    comment(postId: ID, text: string): Promise<Comment>;
+    /** Replies to a top-level comment, oldest first. */
+    replies(postId: ID, commentId: ID, cursor: string | null): Promise<Page<Comment>>;
+    /** Idempotent by `clientId`. */
+    comment(postId: ID, input: CommentInput): Promise<Comment>;
+    /** Author only. */
+    editComment(postId: ID, commentId: ID, text: string): Promise<Comment>;
+    removeComment(postId: ID, commentId: ID): Promise<void>;
   };
   communities: {
     inbox(): Promise<InboxEntry[]>;
-    browse(query: string, cursor: string | null): Promise<Page<CommunitySummary & { membership: Community['membership'] }>>;
-    get(communityId: ID): Promise<Community>;
-    join(communityId: ID): Promise<Community>;
-    leave(communityId: ID): Promise<void>;
+    /** Public communities, newest first. */
+    browse(filter: CommunityBrowseFilter, cursor: string | null): Promise<Page<Community>>;
+    categories(): Promise<Category[]>;
+    /** By ID or slug. */
+    get(ref: string): Promise<Community>;
+    create(input: CommunityInput): Promise<Community>;
+    /** Owner only. Omitted fields are unchanged. */
+    update(id: ID, changes: Partial<CommunityInput>): Promise<Community>;
+    /** Joins, requests to join, or accepts an invitation, depending on the policy and the viewer's state. */
+    join(id: ID): Promise<Community>;
+    leave(id: ID): Promise<void>;
+    cancelRequest(id: ID): Promise<void>;
+    declineInvitation(id: ID): Promise<void>;
+    /** The viewer's communities with the given relationship. */
+    mine(status: Exclude<MembershipStatus, 'none'>, cursor: string | null): Promise<Page<Community>>;
+    members(id: ID, cursor: string | null): Promise<Page<CommunityMember>>;
+    /** Owner only. Ownership changes only through `transferOwnership`. */
+    setRole(id: ID, username: string, role: Exclude<CommunityRole, 'owner'>): Promise<CommunityMember>;
+    removeMember(id: ID, username: string): Promise<void>;
+    /** Owner only; the previous owner becomes a moderator. */
+    transferOwnership(id: ID, username: string): Promise<CommunityMember>;
+    joinRequests(id: ID, cursor: string | null): Promise<Page<JoinRequest>>;
+    approveRequest(id: ID, username: string): Promise<CommunityMember>;
+    rejectRequest(id: ID, username: string): Promise<void>;
+    invitations(id: ID, cursor: string | null): Promise<Page<Invitation>>;
+    invite(id: ID, username: string): Promise<Invitation>;
+    revokeInvitation(id: ID, username: string): Promise<void>;
     setMuted(communityId: ID, muted: boolean): Promise<void>;
     setPinned(communityId: ID, pinned: boolean): Promise<void>;
     /** Marks the conversation read up to `lastMessageId`, or up to the latest message when null. */
@@ -55,9 +120,19 @@ export interface KinnocApi {
   };
   messages: {
     /** Newest first. `cursor` pages back through older history. Members only. */
-    list(communityId: ID, cursor: string | null): Promise<Page<Message>>;
+    list(communityId: ID, cursor: string | null): Promise<MessagePage>;
+    /** Catch-up after a reconnect: messages after `seq`, oldest first; follow `nextCursor` until null. */
+    since(communityId: ID, seq: number, cursor: string | null): Promise<MessagePage>;
     send(input: SendMessageInput): Promise<Message>;
+    /** Sender, owner or moderator. The message keeps its place, without its text. */
+    remove(communityId: ID, messageId: ID): Promise<void>;
     react(messageId: ID, emoji: string, add: boolean): Promise<Reaction[]>;
+  };
+  media: {
+    /** Uploads a local image for a community avatar or cover. */
+    uploadCommunityImage(localUri: string): Promise<UploadedImage>;
+    /** Uploads a local image for a post. Resolves only once storage has accepted it. */
+    uploadPostImage(localUri: string): Promise<PostImage>;
   };
   discover: {
     home(): Promise<DiscoverHome>;
@@ -68,7 +143,13 @@ export interface KinnocApi {
     me(): Promise<Profile>;
     get(userId: ID): Promise<Profile>;
     update(changes: ProfileUpdate): Promise<Profile>;
+    /** Uploads a picked image as the caller's profile photo, replacing any current one. */
+    setAvatar(localUri: string): Promise<Profile>;
+    /** Removes the caller's profile photo; their initials are shown instead. */
+    removeAvatar(): Promise<Profile>;
     posts(userId: ID, cursor: string | null): Promise<Page<Post>>;
+    /** Replaces the caller's interests with these catalogue slugs (from `communities.categories`). May be empty. */
+    setInterests(slugs: string[]): Promise<Profile>;
   };
   notifications: {
     list(cursor: string | null): Promise<Page<AppNotification>>;

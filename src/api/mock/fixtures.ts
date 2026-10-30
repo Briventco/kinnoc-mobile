@@ -83,6 +83,8 @@ export const myProfile: Profile = {
   bio: 'Building products, communities and opportunities for Africa. Always happy to talk startups and product design.',
   website: 'brivent.co',
   interests: ['Product design', 'Startups', 'Web development', 'Community building'],
+  // Free-text interests in sample data: no catalogue.
+  interestSlugs: [],
   followerCount: 312,
   followingCount: 180,
   communityCount: 6,
@@ -97,15 +99,20 @@ type CommunitySeed = Community & {
   hasMention: boolean;
 };
 
-const community = (
-  c: Omit<CommunitySeed, 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules'> &
-    Partial<Pick<CommunitySeed, 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules'>>,
-): CommunitySeed => ({
+type Defaulted = 'isPinned' | 'isMuted' | 'unreadCount' | 'hasMention' | 'rules' | 'slug' | 'categorySlug' | 'coverUrl' | 'joinPolicy' | 'role';
+
+const community = (c: Omit<CommunitySeed, Defaulted> & Partial<Pick<CommunitySeed, Defaulted>>): CommunitySeed => ({
   isPinned: false,
   isMuted: false,
   unreadCount: 0,
   hasMention: false,
   rules: ['Be kind and stay on topic.', 'No spam or self-promotion without context.', 'Share sources when you post resources.'],
+  slug: c.id.replace(/^c_/, ''),
+  categorySlug: c.category.toLowerCase(),
+  coverUrl: null,
+  // As on the server, private communities only grow by invitation.
+  joinPolicy: c.visibility === 'private' ? 'invite-only' : 'open',
+  role: c.membership === 'member' ? 'member' : null,
   ...c,
 });
 
@@ -120,6 +127,8 @@ export const communities: CommunitySeed[] = [
     visibility: 'public',
     description: 'Developers, designers and makers sharing what they build, sessions and resources.',
     membership: 'member',
+    role: 'owner',
+    joinPolicy: 'approval',
     pinned: { title: 'Start here', body: 'Rules, resources and helpful links' },
     isPinned: true,
     unreadCount: 3,
@@ -211,7 +220,7 @@ export const communities: CommunitySeed[] = [
     category: 'Data',
     visibility: 'public',
     description: 'Analysts, data scientists and ML engineers meeting monthly in Lagos.',
-    membership: 'none',
+    membership: 'invited',
     pinned: null,
   }),
   community({
@@ -221,24 +230,29 @@ export const communities: CommunitySeed[] = [
     photoUrl: null,
     memberCount: 128,
     category: 'Writing',
-    visibility: 'private',
+    visibility: 'public',
+    joinPolicy: 'approval',
     description: 'A small circle for writers sharing drafts and feedback. Members approve new joiners.',
     membership: 'none',
     pinned: null,
   }),
 ];
 
-type MessageSeed = Omit<Message, 'clientId' | 'isMine' | 'status' | 'attachments' | 'link' | 'reactions' | 'replyTo'> &
-  Partial<Pick<Message, 'attachments' | 'link' | 'reactions' | 'replyTo' | 'status'>>;
+type MessageSeed = Omit<Message, 'clientId' | 'isMine' | 'status' | 'attachments' | 'link' | 'reactions' | 'replyTo' | 'seq' | 'deletedAt' | 'sender'> &
+  Partial<Pick<Message, 'attachments' | 'link' | 'reactions' | 'replyTo' | 'status'>> & { sender: UserSummary };
 
-const msg = (m: MessageSeed): Message => ({
+/** Sequence numbers are assigned by the mock adapter, in order, per conversation. */
+const msg = ({ sender, ...m }: MessageSeed): Message => ({
   clientId: null,
+  seq: null,
+  deletedAt: null,
   attachments: [],
   link: null,
   reactions: [],
   replyTo: null,
   status: 'read',
-  isMine: m.sender.id === ME_ID,
+  isMine: sender.id === ME_ID,
+  sender: { username: sender.username, displayName: sender.displayName, avatarUrl: sender.avatarUrl },
   ...m,
 });
 
@@ -334,7 +348,19 @@ export const messagesByCommunity: Record<string, Message[]> = {
 /** Who is typing in which community, to show the inbox typing state. */
 export const typingSeed: Record<string, string[]> = { c_uniosun: ['Tovia'] };
 
-const comment = (id: string, author: UserSummary, text: string, createdAt: string): Comment => ({ id, author, text, createdAt });
+const comment = (id: string, author: UserSummary, text: string, createdAt: string): Comment => ({
+  id,
+  // Filled in by the mock adapter from the post the comment belongs to.
+  postId: '',
+  parentId: null,
+  author,
+  text,
+  isMine: false,
+  replyCount: 0,
+  createdAt,
+  editedAt: null,
+  deletedAt: null,
+});
 
 export const posts: Post[] = [
   {
@@ -347,6 +373,8 @@ export const posts: Post[] = [
       ? [{ id: 'media_1', kind: 'image', url: meetupPhoto, width: 1200, height: 696, alt: 'A speaker on stage in front of a screen reading Build, Create, Belong' }]
       : [],
     createdAt: ago(3 * HOUR),
+    link: null,
+    editedAt: null,
     likeCount: 983,
     commentCount: 312,
     likedByMe: true,
@@ -361,7 +389,9 @@ export const posts: Post[] = [
     community: { id: 'c_career', name: 'Career Growth' },
     text: "What are you learning this semester? I'm going deep on system design and would love resource recommendations.",
     media: [],
+    link: null,
     createdAt: ago(5 * HOUR),
+    editedAt: null,
     likeCount: 9,
     commentCount: 12,
     likedByMe: false,
@@ -376,7 +406,9 @@ export const posts: Post[] = [
     community: { id: 'c_builders', name: 'Product Builders' },
     text: 'Slow progress is still progress. Keep building.',
     media: [],
+    link: null,
     createdAt: ago(2 * DAY),
+    editedAt: null,
     likeCount: 24,
     commentCount: 3,
     likedByMe: false,
@@ -400,7 +432,9 @@ export const posts: Post[] = [
         'What tools do you use to plan a side project?',
       ][i % 5],
       media: [],
+      link: null,
       createdAt: ago((8 + i * 7) * HOUR),
+      editedAt: null,
       likeCount: 3 + ((i * 7) % 20),
       commentCount: (i * 3) % 9,
       likedByMe: false,
@@ -435,11 +469,28 @@ export const commentsByPost: Record<string, Comment[]> = {
   ],
 };
 
-const event = (e: Omit<EventItem, 'kind' | 'savedByMe' | 'endsAt' | 'isOnline' | 'coverUrl'> & Partial<EventItem>): EventItem => ({
+type EventDefaults =
+  | 'kind' | 'savedByMe' | 'endsAt' | 'isOnline' | 'coverUrl' | 'timeZone' | 'address' | 'onlineUrl' | 'hostLogoUrl' | 'description'
+  | 'category' | 'tags' | 'price' | 'capacity' | 'registrationDeadline' | 'status' | 'cancellationReason' | 'isPast';
+
+const event = (e: Omit<EventItem, EventDefaults> & Partial<EventItem>): EventItem => ({
   kind: 'event',
   savedByMe: false,
   endsAt: null,
+  timeZone: 'Africa/Lagos',
+  address: null,
   isOnline: false,
+  onlineUrl: null,
+  hostLogoUrl: null,
+  description: null,
+  category: null,
+  tags: [],
+  price: null,
+  capacity: null,
+  registrationDeadline: null,
+  status: 'scheduled',
+  cancellationReason: null,
+  isPast: false,
   coverUrl: null,
   ...e,
 });
@@ -466,7 +517,11 @@ export const discoverItems: DiscoverItem[] = [
     summary: 'An evening of short talks, demos and meeting other builders in Lagos. Hosted by Tech Creators.',
     startsAt: onDay(5, 10),
     venue: 'Victoria Island, Lagos',
+    address: 'Landmark Centre, Victoria Island, Lagos, NG',
     host: 'Tech Creators',
+    category: 'Meetup',
+    tags: ['tech', 'networking'],
+    price: { amount: 0, currency: 'NGN' },
     coverUrl: meetupPhoto,
     externalUrl: 'https://example.com/sample-event',
   }),

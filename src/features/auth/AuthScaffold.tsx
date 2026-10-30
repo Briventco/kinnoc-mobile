@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth/AuthProvider';
 import { ScreenHeader } from '@/components/Header';
 import { Banner } from '@/components/States';
 import { Text } from '@/components/Text';
+import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
 import { colors, space } from '@/theme';
 
 /** Shared frame for the sign-in, sign-up and reset forms. */
@@ -14,7 +15,7 @@ export function AuthScaffold({ title, intro, children }: { title: string; intro?
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
       <ScreenHeader border={false} />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={KEYBOARD_BEHAVIOR}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Text variant="pageTitle" accessibilityRole="header" style={styles.title}>
             {title}

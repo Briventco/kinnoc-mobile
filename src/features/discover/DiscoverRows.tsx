@@ -10,6 +10,7 @@ import { IconButton } from '@/components/IconButton';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { useToggleSave } from '@/features/saved/hooks';
+import { api } from '@/services';
 import { dateStamp, daysUntil, deadlineLabel, formatEventWhen } from '@/lib/format';
 import { colors, gutter, radius, space, type } from '@/theme';
 
@@ -33,8 +34,8 @@ const open = (item: DiscoverItem) => router.push({ pathname: '/discover/[id]', p
 
 /* ---------- Shared pieces ---------- */
 
-export function DateStamp({ iso, size = 44 }: { iso: string; size?: number }) {
-  const { month, day } = dateStamp(iso);
+export function DateStamp({ iso, timeZone, size = 44 }: { iso: string; timeZone?: string | null; size?: number }) {
+  const { month, day } = dateStamp(iso, timeZone);
   return (
     <View style={[styles.stamp, { width: size }]}>
       <Text variant="label" color="primary">
@@ -94,6 +95,8 @@ export function TypeCover({ title, width = 44, height = 56 }: { title: string; w
 
 function SaveButton({ item }: { item: DiscoverItem }) {
   const save = useToggleSave();
+  // Saving needs the social features; without them the row keeps its spacing but shows no bookmark.
+  if (!api.capabilities.social) return <View style={styles.noSave} />;
   return (
     <IconButton
       icon={Bookmark}
@@ -129,8 +132,8 @@ export function EventRow({ item }: { item: EventItem }) {
   return (
     <Row
       item={item}
-      lead={<DateStamp iso={item.startsAt} />}
-      label={<KindLabel parts={['Event', item.isOnline ? 'Online' : formatEventWhen(item.startsAt)]} />}
+      lead={<DateStamp iso={item.startsAt} timeZone={item.timeZone} />}
+      label={<KindLabel parts={['Event', item.isOnline ? 'Online' : formatEventWhen(item.startsAt, undefined, item.timeZone)]} />}
       sub={`${item.venue} · ${item.host}`}
     />
   );
@@ -169,10 +172,10 @@ export function FeaturedItem({ item }: { item: DiscoverItem }) {
   let sub: string;
 
   if (item.kind === 'event') {
-    const { month, day } = dateStamp(item.startsAt);
+    const { month, day } = dateStamp(item.startsAt, item.timeZone);
     visual = item.coverUrl ? (
       <View style={styles.visual}>
-        <Image source={{ uri: item.coverUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Image source={{ uri: item.coverUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} accessibilityIgnoresInvertColors />
         <View style={styles.photoStamp}>
           <Text variant="numeral" style={styles.photoStampDay}>
             {day}
@@ -190,7 +193,7 @@ export function FeaturedItem({ item }: { item: DiscoverItem }) {
         <Text style={[type.numeral, styles.bigNumeral, { color: colors.brandNavy }]}>{day}</Text>
       </View>
     );
-    label = <KindLabel parts={['Event', formatEventWhen(item.startsAt)]} />;
+    label = <KindLabel parts={['Event', formatEventWhen(item.startsAt, undefined, item.timeZone)]} />;
     sub = `${item.venue} · ${item.host}`;
   } else if (item.kind === 'opportunity') {
     const days = item.closesAt ? daysUntil(item.closesAt) : null;
@@ -249,6 +252,7 @@ export function FeaturedItem({ item }: { item: DiscoverItem }) {
 }
 
 const styles = StyleSheet.create({
+  noSave: { width: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[3] },
   body: { flex: 1, minWidth: 0, gap: 3 },
   stamp: { alignItems: 'center' },

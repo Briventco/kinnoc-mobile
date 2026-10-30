@@ -1,21 +1,23 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import { Bookmark, Calendar, CircleAlert, ExternalLink, MapPin, Share2, Users, type LucideIcon } from 'lucide-react-native';
+import { Bookmark, Calendar, CircleAlert, Clock, ExternalLink, MapPin, Share2, Tag, Ticket, Users, Video, type LucideIcon } from 'lucide-react-native';
+import { useState } from 'react';
 import { Share, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import type { DiscoverItem } from '@/api/types';
+import type { DiscoverItem, EventItem } from '@/api/types';
 import { OrgMonogram } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
-import { CenteredSpinner, ErrorState, Hairline } from '@/components/States';
+import { Banner, CenteredSpinner, ErrorState, Hairline } from '@/components/States';
 import { Text } from '@/components/Text';
 import { ARRANGEMENT_LABEL, DateStamp, FORMAT_LABEL, KindLabel, OPPORTUNITY_LABEL, TypeCover, opportunityLabel, resourceLabel } from '@/features/discover/DiscoverRows';
 import { useDiscoverItem } from '@/features/discover/hooks';
 import { useToggleSave } from '@/features/saved/hooks';
-import { deadlineLabel, formatDay, formatDayTime, formatTime } from '@/lib/format';
+import { deadlineLabel, formatDay, formatDayTime, formatEventRange, formatPrice, hasPassed, plural, timeZoneNote } from '@/lib/format';
+import { openExternal } from '@/lib/links';
+import { api } from '@/services';
 import { colors, gutter, radius, space } from '@/theme';
 
 export default function DiscoverDetail() {
@@ -33,7 +35,9 @@ export default function DiscoverDetail() {
   }
 
   const d = item.data;
-  const share = () => void Share.share({ message: d.externalUrl ? `${d.title} — ${d.externalUrl}` : `${d.title} on Kinnoc` });
+  const when = d.kind === 'event' ? ` · ${formatDayTime(d.startsAt, d.timeZone)}` : '';
+  const share = () => void Share.share({ message: d.externalUrl ? `${d.title}${when} — ${d.externalUrl}` : `${d.title}${when} on Kinnoc` });
+  const action = actionState(d);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -41,13 +45,15 @@ export default function DiscoverDetail() {
         right={
           <>
             <IconButton icon={Share2} label="Share" onPress={share} />
-            <IconButton
-              icon={Bookmark}
-              label={d.savedByMe ? 'Remove from Saved' : 'Save'}
-              color={d.savedByMe ? 'primary' : 'text'}
-              fill={d.savedByMe ? 'primary' : undefined}
-              onPress={() => save.mutate({ target: { kind: 'discover', item: d }, saved: !d.savedByMe })}
-            />
+            {api.capabilities.social ? (
+              <IconButton
+                icon={Bookmark}
+                label={d.savedByMe ? 'Remove from Saved' : 'Save'}
+                color={d.savedByMe ? 'primary' : 'text'}
+                fill={d.savedByMe ? 'primary' : undefined}
+                onPress={() => save.mutate({ target: { kind: 'discover', item: d }, saved: !d.savedByMe })}
+              />
+            ) : null}
           </>
         }
       />
@@ -57,9 +63,28 @@ export default function DiscoverDetail() {
           <Text variant="pageTitle" accessibilityRole="header">
             {d.title}
           </Text>
+          {d.kind === 'event' ? <EventStatus event={d} /> : null}
           <Facts item={d} />
           <Hairline style={styles.rule} />
-          <Text variant="post">{d.summary}</Text>
+          {d.kind === 'event' && d.description ? (
+            <>
+              {d.summary ? (
+                <Text variant="post" color="textSecondary">
+                  {d.summary}
+                </Text>
+              ) : null}
+              <Text variant="post" selectable>
+                {d.description}
+              </Text>
+            </>
+          ) : d.summary ? (
+            <Text variant="post">{d.summary}</Text>
+          ) : null}
+          {d.kind === 'event' && d.tags.length ? (
+            <Text variant="meta" color="textTertiary" accessibilityLabel={`Tags: ${d.tags.join(', ')}`}>
+              {d.tags.map((t) => `#${t}`).join('  ')}
+            </Text>
+          ) : null}
         </View>
       </ScrollView>
       {d.externalUrl ? (
@@ -67,9 +92,9 @@ export default function DiscoverDetail() {
           <Button
             size="large"
             icon={ExternalLink}
-            label={actionLabel(d)}
-            disabled={d.kind === 'opportunity' && !!d.closesAt && deadlineLabel(d.closesAt).closed}
-            onPress={() => void WebBrowser.openBrowserAsync(d.externalUrl!)}
+            label={action.label}
+            disabled={action.disabled}
+            onPress={() => openExternal(d.externalUrl!)}
             accessibilityHint="Opens the organiser's page in a browser"
           />
           <Text variant="meta" color="textTertiary" style={styles.footerNote}>
@@ -85,20 +110,55 @@ function hostOf(url: string) {
   return url.replace(/^https?:\/\//, '').split('/')[0];
 }
 
-function actionLabel(d: DiscoverItem) {
-  if (d.kind === 'event') return 'Register on organiser site';
-  if (d.kind === 'opportunity') return d.closesAt && deadlineLabel(d.closesAt).closed ? 'Applications closed' : 'Apply on organiser site';
-  return d.format === 'video' ? 'Watch' : 'Open resource';
+function actionState(d: DiscoverItem): { label: string; disabled: boolean } {
+  if (d.kind === 'event') {
+    if (d.status === 'cancelled') return { label: 'Event cancelled', disabled: true };
+    if (d.isPast) return { label: 'This event has ended', disabled: true };
+    if (d.registrationDeadline && hasPassed(d.registrationDeadline)) return { label: 'Registration closed', disabled: true };
+    return { label: 'Register on organiser site', disabled: false };
+  }
+  if (d.kind === 'opportunity') {
+    const closed = !!d.closesAt && deadlineLabel(d.closesAt).closed;
+    return { label: closed ? 'Applications closed' : 'Apply on organiser site', disabled: closed };
+  }
+  return { label: d.format === 'video' ? 'Watch' : 'Open resource', disabled: false };
+}
+
+/** Cancelled and ended events stay readable from a shared link, with the reason up front. */
+function EventStatus({ event }: { event: EventItem }) {
+  if (event.status === 'cancelled') {
+    const reason = event.cancellationReason ? ` ${event.cancellationReason}` : '';
+    return <Banner tone="warning" message={`This event has been cancelled.${reason}`} />;
+  }
+  if (event.isPast) return <Banner tone="info" message="This event has ended." />;
+  return null;
+}
+
+/** A poster that fails to load is removed rather than left as a grey block. */
+function Poster({ uri }: { uri: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.hero}
+      contentFit="cover"
+      transition={150}
+      onError={() => setFailed(true)}
+      accessibilityIgnoresInvertColors
+      accessibilityLabel="Event poster"
+    />
+  );
 }
 
 function Lead({ item }: { item: DiscoverItem }) {
   if (item.kind === 'event') {
     return (
       <>
-        {item.coverUrl ? <Image source={{ uri: item.coverUrl }} style={styles.hero} contentFit="cover" accessibilityIgnoresInvertColors /> : null}
+        {item.coverUrl ? <Poster key={item.coverUrl} uri={item.coverUrl} /> : null}
         <View style={styles.leadRow}>
-          <DateStamp iso={item.startsAt} />
-          <KindLabel parts={['Event', item.isOnline ? 'Online' : 'In person']} />
+          <DateStamp iso={item.startsAt} timeZone={item.timeZone} />
+          <KindLabel parts={[item.category ?? 'Event', item.isOnline ? 'Online' : 'In person']} />
         </View>
       </>
     );
@@ -148,12 +208,38 @@ function Fact({ icon: Icon, label, value, warning }: { icon: LucideIcon; label: 
 
 function Facts({ item }: { item: DiscoverItem }) {
   if (item.kind === 'event') {
-    const when = item.endsAt ? `${formatDay(item.startsAt)} to ${formatDay(item.endsAt)}, from ${formatTime(item.startsAt)}` : formatDayTime(item.startsAt);
+    const note = timeZoneNote(item.timeZone);
+    const when = formatEventRange(item.startsAt, item.endsAt, item.timeZone) + (note ? ` (${note})` : '');
+    const where = item.isOnline ? 'Online' : [item.venue, item.address].filter(Boolean).join('\n');
+    const price = formatPrice(item.price);
+    const deadline = item.registrationDeadline;
+    const deadlinePassed = !!deadline && hasPassed(deadline);
+    const live = item.status !== 'cancelled' && !item.isPast;
     return (
       <View style={styles.facts}>
         <Fact icon={Calendar} label="When" value={when} />
-        <Fact icon={MapPin} label="Where" value={item.isOnline ? 'Online' : item.venue} />
+        <Fact icon={MapPin} label="Where" value={where} />
+        {item.isOnline && item.onlineUrl && live ? (
+          <Button
+            variant="quiet"
+            icon={Video}
+            label="Join online"
+            onPress={() => openExternal(item.onlineUrl!)}
+            accessibilityHint="Opens the event's online link in a browser"
+            style={styles.factAction}
+          />
+        ) : null}
         <Fact icon={Users} label="Hosted by" value={item.host} />
+        {price ? <Fact icon={Ticket} label="Price" value={price} /> : null}
+        {deadline && live ? (
+          <Fact
+            icon={Clock}
+            label="Register by"
+            value={`${formatDayTime(deadline, item.timeZone)}${deadlinePassed ? ' · Closed' : ''}`}
+            warning={deadlinePassed}
+          />
+        ) : null}
+        {item.capacity ? <Fact icon={Tag} label="Capacity" value={plural(item.capacity, 'place')} /> : null}
       </View>
     );
   }
@@ -199,6 +285,7 @@ const styles = StyleSheet.create({
   facts: { gap: space[3] },
   fact: { flexDirection: 'row', gap: space[3], alignItems: 'flex-start' },
   rule: { marginVertical: space[1] },
+  factAction: { alignSelf: 'flex-start', marginLeft: 18 + space[3] },
   footer: { paddingHorizontal: gutter, paddingTop: space[3], paddingBottom: space[2], borderTopWidth: 1, borderTopColor: colors.border, gap: space[2] },
   footerNote: { textAlign: 'center' },
 });

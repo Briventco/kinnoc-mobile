@@ -42,7 +42,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Kinnoc uses your photos so you can share images in posts and community conversations.",
-          "cameraPermission": "Kinnoc uses the camera so you can take photos to share in posts and community conversations."
+          "cameraPermission": "Kinnoc uses the camera so you can take photos to share in posts and community conversations.",
+          "microphonePermission": false
         }
       ]
     ],
