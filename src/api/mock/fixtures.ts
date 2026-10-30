@@ -34,7 +34,12 @@ const onDay = (days: number, hour = 10) => {
   return d.toISOString();
 };
 
-const asset = (module: number): string | null => Image.resolveAssetSource(module)?.uri ?? null;
+/** A bundled image's URI. Native bundles give a module ID; the web bundle gives the URL (or `{ uri }`). */
+const asset = (module: number | string | { uri?: string }): string | null => {
+  if (typeof module === 'string') return module;
+  if (typeof module === 'object') return module.uri ?? null;
+  return Image.resolveAssetSource?.(module)?.uri ?? null;
+};
 
 const meetupPhoto = asset(require('@/assets/images/sample/meetup-stage.jpg'));
 const toviaStagePhoto = asset(require('@/assets/images/sample/tovia-stage.jpg'));

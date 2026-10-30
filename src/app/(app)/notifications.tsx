@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { AtSign, CalendarClock, Clock, Heart, MessageCircle, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
+import { AtSign, Bell, CalendarClock, Clock, Heart, MessageCircle, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
 import { SectionList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -15,6 +15,7 @@ import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications 
 import { flatten } from '@/lib/cache';
 import { formatAgeLong } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, communityRadius, gutter, space } from '@/theme';
 
 const BADGE: Record<NotificationKind, { icon: LucideIcon; bg: string } | null> = {
@@ -98,6 +99,21 @@ export default function NotificationsScreen() {
   const pull = usePullToRefresh(list.refetch);
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+
+  if (!api.capabilities.social) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        <ScreenHeader title="Notifications" border={false} />
+        <EmptyState
+          title="Notifications aren't available yet"
+          body="Mentions, replies and reminders will show up here once notifications are enabled on the Kinnoc backend."
+          lifted={<Bell size={28} color={colors.textTertiary} strokeWidth={1.75} />}
+          action={{ label: 'Back to Feed', onPress: () => router.navigate('/') }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   const items = flatten(list.data);
   const fresh = items.filter((n) => !n.read);
   const earlier = items.filter((n) => n.read);

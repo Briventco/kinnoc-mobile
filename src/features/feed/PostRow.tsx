@@ -113,7 +113,7 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
 
       {post.link ? (
         <Pressable
-          onPress={() => openExternal(post.link!.url)}
+          onPress={() => void openExternal(post.link!.url)}
           style={styles.link}
           accessibilityRole="link"
           accessibilityLabel={`Link to ${post.link.domain}`}

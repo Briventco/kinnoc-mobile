@@ -112,19 +112,22 @@ function SaveButton({ item }: { item: DiscoverItem }) {
 
 function Row({ item, lead, label, sub }: { item: DiscoverItem; lead: React.ReactNode; label: React.ReactNode; sub: string }) {
   return (
-    <Pressable onPress={() => open(item)} style={styles.row} accessibilityRole="button" accessibilityLabel={`${item.title}, ${sub}`} pressedOpacity={0.7}>
-      {lead}
-      <View style={styles.body}>
-        {label}
-        <Text variant="rowTitle" numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text variant="preview" color="textSecondary" numberOfLines={1}>
-          {sub}
-        </Text>
-      </View>
+    // Save is a sibling of the row's button, so screen readers reach both.
+    <View style={styles.row}>
+      <Pressable onPress={() => open(item)} style={styles.rowMain} accessibilityRole="button" accessibilityLabel={`${item.title}, ${sub}`} pressedOpacity={0.7}>
+        {lead}
+        <View style={styles.body}>
+          {label}
+          <Text variant="rowTitle" numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text variant="preview" color="textSecondary" numberOfLines={1}>
+            {sub}
+          </Text>
+        </View>
+      </Pressable>
       <SaveButton item={item} />
-    </Pressable>
+    </View>
   );
 }
 
@@ -233,27 +236,34 @@ export function FeaturedItem({ item }: { item: DiscoverItem }) {
   }
 
   return (
-    <Pressable onPress={() => open(item)} style={styles.featured} accessibilityRole="button" accessibilityLabel={`${item.title}, ${sub}`} pressedOpacity={0.8}>
-      {visual}
-      <View style={styles.featuredText}>
-        <View style={styles.featuredLabelRow}>
-          <View style={styles.body}>{label}</View>
-          <SaveButton item={item} />
+    <View style={styles.featured}>
+      <Pressable onPress={() => open(item)} accessibilityRole="button" accessibilityLabel={`${item.title}, ${sub}`} pressedOpacity={0.8}>
+        {visual}
+        <View style={styles.featuredText}>
+          <View style={styles.featuredLabelRow}>
+            <View style={styles.body}>{label}</View>
+            {/* Keeps the row's height whether or not Save is offered; Save itself sits over it. */}
+            <View style={styles.saveSlot} />
+          </View>
+          <Text variant="featured" numberOfLines={2} style={styles.featuredTitle}>
+            {item.title}
+          </Text>
+          <Text variant="preview" color="textSecondary" numberOfLines={1}>
+            {sub}
+          </Text>
         </View>
-        <Text variant="featured" numberOfLines={2} style={styles.featuredTitle}>
-          {item.title}
-        </Text>
-        <Text variant="preview" color="textSecondary" numberOfLines={1}>
-          {sub}
-        </Text>
+      </Pressable>
+      <View style={styles.featuredSave}>
+        <SaveButton item={item} />
       </View>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   noSave: { width: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[3] },
+  rowMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space[3] },
   body: { flex: 1, minWidth: 0, gap: 3 },
   stamp: { alignItems: 'center' },
   cover: { borderRadius: radius.tag, backgroundColor: colors.brandNavy, justifyContent: 'flex-end', padding: 6 },
@@ -276,6 +286,9 @@ const styles = StyleSheet.create({
   mist: { backgroundColor: colors.surface2, alignItems: 'center', justifyContent: 'center' },
   bigNumeral: { fontSize: 40, lineHeight: 44 },
   featuredText: { paddingTop: space[2], gap: 2 },
+  saveSlot: { width: 34, height: 44 },
+  // Over the save slot: below the 148px visual, the label row's top padding and offset.
+  featuredSave: { position: 'absolute', top: 148 + space[2] - 4, right: -10 },
   featuredLabelRow: { flexDirection: 'row', alignItems: 'center', marginRight: -10, marginBottom: -6, marginTop: -4 },
   featuredTitle: { marginBottom: 2 },
 });

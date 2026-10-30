@@ -94,7 +94,7 @@ export default function DiscoverDetail() {
             icon={ExternalLink}
             label={action.label}
             disabled={action.disabled}
-            onPress={() => openExternal(d.externalUrl!)}
+            onPress={() => void openExternal(d.externalUrl!)}
             accessibilityHint="Opens the organiser's page in a browser"
           />
           <Text variant="meta" color="textTertiary" style={styles.footerNote}>
@@ -224,7 +224,7 @@ function Facts({ item }: { item: DiscoverItem }) {
             variant="quiet"
             icon={Video}
             label="Join online"
-            onPress={() => openExternal(item.onlineUrl!)}
+            onPress={() => void openExternal(item.onlineUrl!)}
             accessibilityHint="Opens the event's online link in a browser"
             style={styles.factAction}
           />

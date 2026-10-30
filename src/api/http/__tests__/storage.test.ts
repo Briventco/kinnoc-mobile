@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 import { AVATAR_BUCKET, AVATAR_LIMITS, createImageRemover, createImageUploader, POST_MEDIA_BUCKET } from '../storage';
 
@@ -115,5 +116,53 @@ describe('profile photos', () => {
     await removeFile('user-2/theirs.jpg');
     await removeFile('user-1/../user-2/theirs.jpg');
     expect(remove.mock.calls).toEqual([[['user-1/old.jpg']]]);
+  });
+});
+
+describe('web image uploads', () => {
+  const originalPlatform = Platform.OS;
+  const originalFetch = globalThis.fetch;
+  const revokeObjectURLMock = jest.fn();
+
+  beforeEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
+    Object.defineProperty(globalThis, 'URL', {
+      value: { ...globalThis.URL, revokeObjectURL: revokeObjectURLMock },
+      configurable: true,
+      writable: true,
+    });
+    revokeObjectURLMock.mockClear();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Platform, 'OS', { value: originalPlatform, configurable: true });
+    globalThis.fetch = originalFetch;
+  });
+
+  it('reads bytes using browser fetch for blob URIs and uploads to Supabase', async () => {
+    const mockBuffer = new ArrayBuffer(5000);
+    globalThis.fetch = jest.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => mockBuffer,
+    })) as never;
+
+    const { client, upload } = supabase();
+    const result = await createImageUploader(client, POST_MEDIA_BUCKET)('blob:http://localhost:8081/abc-123');
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('file:///tmp/out.jpg');
+    expect(upload).toHaveBeenCalledWith('user-1/random-name.jpg', mockBuffer, { contentType: 'image/jpeg', upsert: false });
+    expect(result.key).toBe('user-1/random-name.jpg');
+  });
+
+  it('reports validation error when the image is unreadable on web', async () => {
+    globalThis.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 404,
+    })) as never;
+
+    const { client } = supabase();
+    await expect(createImageUploader(client, POST_MEDIA_BUCKET)('blob:http://localhost:8081/corrupt')).rejects.toMatchObject({
+      code: 'network',
+    });
   });
 });

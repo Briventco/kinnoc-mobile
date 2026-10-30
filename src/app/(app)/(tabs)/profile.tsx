@@ -32,7 +32,9 @@ export default function ProfileScreen() {
   const posts = useUserPosts(me.data?.id);
   const saved = useSaved();
   const communities = useUserCommunities(me.data?.id);
-  const pull = usePullToRefresh(() => Promise.all([me.refetch(), posts.refetch(), saved.refetch(), communities.refetch()]));
+  const pull = usePullToRefresh(() =>
+    Promise.all([me.refetch(), posts.refetch(), ...(api.capabilities.social ? [saved.refetch()] : []), communities.refetch()]),
+  );
 
   const active = tab === 'posts' ? posts : saved;
   const rows: Row[] =
@@ -90,7 +92,7 @@ export default function ProfileScreen() {
         )}
         <View style={styles.statsRow}>
           {website ? (
-            <Pressable onPress={() => openExternal(website)} style={styles.inline} accessibilityRole="link" hitSlop={8}>
+            <Pressable onPress={() => void openExternal(website)} style={styles.inline} accessibilityRole="link" hitSlop={8}>
               <Link2 size={16} color={colors.primary} strokeWidth={2} />
               <Text variant="name" color="primary">
                 {p.website}
@@ -165,14 +167,16 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      <Tabs<ProfileTab>
-        items={[
-          { key: 'posts', label: 'Posts' },
-          { key: 'saved', label: 'Saved' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
+      {api.capabilities.social ? (
+        <Tabs<ProfileTab>
+          items={[
+            { key: 'posts', label: 'Posts' },
+            { key: 'saved', label: 'Saved' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      ) : null}
     </View>
   );
 

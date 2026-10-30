@@ -82,7 +82,7 @@ export const MessageBubble = memo(function MessageBubble({ message, status, show
       {message.link ? (
         <Pressable
           style={[styles.inset, styles.link]}
-          onPress={() => openExternal(message.link!.url)}
+          onPress={() => void openExternal(message.link!.url)}
           accessibilityRole="link"
           accessibilityLabel={`${message.link.title}, ${message.link.domain}`}
         >

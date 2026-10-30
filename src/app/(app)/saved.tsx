@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { Bookmark } from 'lucide-react-native';
 import { FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,12 +11,29 @@ import { useSaved } from '@/features/saved/hooks';
 import { SavedRow, savedKey } from '@/features/saved/SavedRow';
 import { flatten } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, space } from '@/theme';
 
 /** Bookmarked posts, events, opportunities and resources. Tapping a bookmark removes it. */
 export default function SavedScreen() {
   const saved = useSaved();
   const pull = usePullToRefresh(saved.refetch);
+
+  if (!api.capabilities.social) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        <ScreenHeader title="Saved" />
+        <EmptyState
+          title="Saved items aren't available yet"
+          body="Saving posts, events and opportunities isn't supported on this version of the backend yet."
+          lifted={<Bookmark size={32} color={colors.textTertiary} strokeWidth={1.5} />}
+          action={{ label: 'Back to Discover', onPress: () => router.navigate('/discover') }}
+          secondary={{ label: 'Go to Feed', onPress: () => router.navigate('/') }}
+        />
+      </SafeAreaView>
+    );
+  }
+
   const items = flatten(saved.data).filter((s) => (s.kind === 'post' ? s.post.savedByMe : s.item.savedByMe));
 
   return (

@@ -34,6 +34,8 @@ export const fonts = {
 export const type = {
   /** Welcome and onboarding headlines only. */
   hero: { fontFamily: fonts.display600, fontSize: 42, lineHeight: 44, letterSpacing: -1.4 },
+  /** Sign-in, sign-up and setup titles: the welcome's voice, one size down. */
+  display: { fontFamily: fonts.display600, fontSize: 32, lineHeight: 36, letterSpacing: -0.9 },
   /** Titles of the four main tabs. */
   pageTitle: { fontFamily: fonts.display600, fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
   /** Pushed screen titles. */

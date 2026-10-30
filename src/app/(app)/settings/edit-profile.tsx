@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Camera, Check, ImagePlus, Trash2, X } from 'lucide-react-native';
+import { Camera, ImagePlus, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,20 +12,18 @@ import { TextField } from '@/components/Field';
 import { IconButton } from '@/components/IconButton';
 import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
-import { Banner, CenteredSpinner, ErrorState, SkeletonBlock } from '@/components/States';
+import { Banner, CenteredSpinner, ErrorState } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { validateName } from '@/features/auth/validation';
-import { useCategories } from '@/features/communities/hooks';
 import { useMe, useRemoveAvatar, useSetAvatar, useUpdateProfile } from '@/features/profile/hooks';
+import { InterestPicker } from '@/features/profile/InterestPicker';
 import { pickSquareImage } from '@/lib/media';
 import { api } from '@/services';
 import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
 import { colors, fonts, gutter, radius, space } from '@/theme';
 
 const MAX_INTERESTS = 8;
-/** The API keeps at most 20 interests per person. */
-const MAX_CATALOGUE_INTERESTS = 20;
 
 export default function EditProfile() {
   const me = useMe();
@@ -189,47 +187,50 @@ function EditForm({ profile }: { profile: Profile }) {
               autoCorrect={false}
               placeholder="yoursite.com"
             />
-            <View style={styles.interests}>
-              <Text variant="label" color="textTertiary">
-                Interests
-              </Text>
-              <View style={styles.tags}>
-                {form.interests.map((i) => (
-                  <Pressable
-                    key={i}
-                    onPress={() => setForm((f) => ({ ...f, interests: f.interests.filter((x) => x !== i) }))}
-                    style={styles.tag}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${i}`}
-                  >
-                    <Text variant="name" style={styles.tagText}>
-                      {i}
-                    </Text>
-                    <X size={14} color={colors.textTertiary} strokeWidth={2} />
-                  </Pressable>
-                ))}
-              </View>
-              {form.interests.length < MAX_INTERESTS ? (
-                <View style={styles.addRow}>
-                  <TextInput
-                    value={interest}
-                    onChangeText={setInterest}
-                    placeholder="Add an interest"
-                    placeholderTextColor={colors.textTertiary}
-                    onSubmitEditing={addInterest}
-                    returnKeyType="done"
-                    style={styles.addInput}
-                    accessibilityLabel="Add an interest"
-                    maxLength={32}
-                  />
-                  <Button label="Add" variant="quiet" size="small" onPress={addInterest} disabled={!interest.trim()} />
-                </View>
-              ) : (
-                <Text variant="meta" color="textTertiary">
-                  You can add up to {MAX_INTERESTS} interests.
+            {/* Free-text interests, only where the backend has no catalogue (the picker covers that case). */}
+            {!catalogue ? (
+              <View style={styles.interests}>
+                <Text variant="label" color="textTertiary">
+                  Interests
                 </Text>
-              )}
-            </View>
+                <View style={styles.tags}>
+                  {form.interests.map((i) => (
+                    <Pressable
+                      key={i}
+                      onPress={() => setForm((f) => ({ ...f, interests: f.interests.filter((x) => x !== i) }))}
+                      style={styles.tag}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${i}`}
+                    >
+                      <Text variant="name" style={styles.tagText}>
+                        {i}
+                      </Text>
+                      <X size={14} color={colors.textTertiary} strokeWidth={2} />
+                    </Pressable>
+                  ))}
+                </View>
+                {form.interests.length < MAX_INTERESTS ? (
+                  <View style={styles.addRow}>
+                    <TextInput
+                      value={interest}
+                      onChangeText={setInterest}
+                      placeholder="Add an interest"
+                      placeholderTextColor={colors.textTertiary}
+                      onSubmitEditing={addInterest}
+                      returnKeyType="done"
+                      style={styles.addInput}
+                      accessibilityLabel="Add an interest"
+                      maxLength={32}
+                    />
+                    <Button label="Add" variant="quiet" size="small" onPress={addInterest} disabled={!interest.trim()} />
+                  </View>
+                ) : (
+                  <Text variant="meta" color="textTertiary">
+                    You can add up to {MAX_INTERESTS} interests.
+                  </Text>
+                )}
+              </View>
+            ) : null}
           </>
         ) : null}
       </ScrollView>
@@ -248,60 +249,7 @@ function EditForm({ profile }: { profile: Profile }) {
   );
 }
 
-/** Interests from the API's catalogue, as toggles. Saved with the rest of the form. */
-function InterestPicker({ picked, onChange }: { picked: string[]; onChange: (slugs: string[]) => void }) {
-  const options = useCategories();
-  const full = picked.length >= MAX_CATALOGUE_INTERESTS;
-  const toggle = (slug: string) => onChange(picked.includes(slug) ? picked.filter((s) => s !== slug) : full ? picked : [...picked, slug]);
-
-  return (
-    <View style={styles.interests}>
-      <Text variant="label" color="textTertiary">
-        Interests
-      </Text>
-      {options.isPending ? (
-        <View style={styles.tags} accessible accessibilityLabel="Loading interests" accessibilityRole="progressbar">
-          {[88, 120, 72, 104, 96].map((w) => (
-            <SkeletonBlock key={w} style={{ width: w, height: 36, borderRadius: radius.tag }} />
-          ))}
-        </View>
-      ) : options.isError ? (
-        <ErrorState error={options.error} onRetry={() => options.refetch()} style={styles.pickerError} />
-      ) : (
-        <>
-          <View style={styles.tags}>
-            {options.data.map((c) => {
-              const on = picked.includes(c.slug);
-              return (
-                <Pressable
-                  key={c.slug}
-                  onPress={() => toggle(c.slug)}
-                  disabled={!on && full}
-                  style={[styles.tag, on && styles.tagOn]}
-                  accessibilityRole="checkbox"
-                  accessibilityLabel={c.name}
-                  accessibilityState={{ checked: on, disabled: !on && full }}
-                >
-                  {on ? <Check size={14} color={colors.primary} strokeWidth={2.5} /> : null}
-                  <Text variant="name" color={on ? 'primary' : !on && full ? 'textTertiary' : 'text'} style={styles.tagText}>
-                    {c.name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text variant="meta" color="textTertiary">
-            {full ? `That's the most you can pick (${MAX_CATALOGUE_INTERESTS}).` : picked.length ? `${picked.length} picked. People see these on your profile.` : 'Pick what you’re into. You can leave this empty.'}
-          </Text>
-        </>
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  tagOn: { borderColor: colors.primarySubtleStrong, backgroundColor: colors.primarySubtle },
-  pickerError: { marginHorizontal: 0 },
   root: { flex: 1, backgroundColor: colors.surface },
   flex: { flex: 1 },
   header: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: colors.border },

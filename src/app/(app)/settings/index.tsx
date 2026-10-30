@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { Bell, Bookmark, Code, LogOut, Shield, UserPen } from 'lucide-react-native';
+import { Bell, Bookmark, Code, FileText, LogOut, Shield, UserPen } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,14 +9,21 @@ import { useAuth } from '@/auth/AuthProvider';
 import { ScreenHeader } from '@/components/Header';
 import { ConfirmDialog } from '@/components/Overlays';
 import { Text } from '@/components/Text';
+import { useToast } from '@/components/Toast';
 import { env } from '@/config/env';
 import { SettingRow, SettingSection } from '@/features/settings/SettingRow';
+import { openExternal } from '@/lib/links';
+import { api } from '@/services';
 import { colors, gutter, space } from '@/theme';
 
 export default function Settings() {
   const { session, signOut, isPreview } = useAuth();
   const [confirm, setConfirm] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const toast = useToast();
+  const openLegal = async (url: string, name: string) => {
+    if (!(await openExternal(url))) toast.show({ message: `Couldn't open the ${name}. Check your connection and try again.` });
+  };
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -24,15 +31,23 @@ export default function Settings() {
       <ScrollView contentContainerStyle={styles.content}>
         <SettingSection title="Account">
           <SettingRow icon={UserPen} label="Edit profile" onPress={() => router.push('/settings/edit-profile')} />
-          <SettingRow icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} />
+          {api.capabilities.social ? <SettingRow icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} /> : null}
           {session ? <SettingRow label="Email" detail={session.user.email} /> : null}
         </SettingSection>
-        <SettingSection title="Notifications">
-          <SettingRow icon={Bell} label="Notification settings" onPress={() => router.push('/settings/notifications')} />
-        </SettingSection>
+        {api.capabilities.social ? (
+          <SettingSection title="Notifications">
+            <SettingRow icon={Bell} label="Notification settings" onPress={() => router.push('/settings/notifications')} />
+          </SettingSection>
+        ) : null}
         <SettingSection title="Privacy">
           <SettingRow icon={Shield} label="Privacy and safety" onPress={() => router.push('/settings/privacy')} />
         </SettingSection>
+        {env.legal ? (
+          <SettingSection title="Legal">
+            <SettingRow icon={FileText} label="Terms" onPress={() => void openLegal(env.legal!.termsUrl, 'Terms')} />
+            <SettingRow icon={FileText} label="Privacy Policy" onPress={() => void openLegal(env.legal!.privacyUrl, 'Privacy Policy')} />
+          </SettingSection>
+        ) : null}
         {env.usesSampleData || isPreview ? (
           <SettingSection title="Development">
             <SettingRow

@@ -3,7 +3,7 @@
  * the access token it receives. Sessions are kept in the device keychain via secureStorage.
  */
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { secureStorage } from './secureStorage';
 import { AuthError, type AuthService, type AuthSession } from './types';
@@ -44,6 +44,22 @@ function toAuthError(error: { code?: string; message: string; status?: number })
 
 /** Auth requests (sign-in, token refresh) give up after this, so a stalled network cannot hold startup. */
 const AUTH_TIMEOUT_MS = 20_000;
+const WEB_APP_URL = 'https://web.kinnoc.app';
+
+/**
+ * Returns the appropriate redirect URL for auth confirmation and password recovery emails.
+ * On web, resolves to the actual browser origin (e.g. https://web.kinnoc.app) so links work
+ * across production and development environments.
+ */
+export function getAuthRedirectUrl(): string | undefined {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}/`;
+    }
+    return `${WEB_APP_URL}/`;
+  }
+  return undefined;
+}
 
 /**
  * `fetch` with a time limit for Supabase Auth calls. Storage uploads keep no limit: a large photo
@@ -65,7 +81,7 @@ export function createSupabaseClient(url: string, anonKey: string): SupabaseClie
       storage: secureStorage,
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: Platform.OS === 'web',
     },
   });
 }
@@ -91,18 +107,25 @@ export function createSupabaseAuth(client: SupabaseClient): AuthService {
       return session;
     },
     async signUp({ displayName, username, email, password }) {
+      const emailRedirectTo = getAuthRedirectUrl();
       const { data, error } = await client.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { display_name: displayName.trim(), username: username.trim().toLowerCase() } },
+        options: {
+          data: { display_name: displayName.trim(), username: username.trim().toLowerCase() },
+          ...(emailRedirectTo ? { emailRedirectTo } : {}),
+        },
       });
       if (error) throw toAuthError(error);
       const session = toSession(data.session);
       return { session, needsEmailConfirmation: !session };
     },
     async requestPasswordReset(email) {
-      // The reset link opens the Supabase-configured site URL; in-app reset is a follow-up.
-      const { error } = await client.auth.resetPasswordForEmail(email.trim());
+      // The reset link opens the configured site/redirect URL.
+      const redirectTo = getAuthRedirectUrl();
+      const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+        ...(redirectTo ? { redirectTo } : {}),
+      });
       if (error) throw toAuthError(error);
     },
     async signOut() {

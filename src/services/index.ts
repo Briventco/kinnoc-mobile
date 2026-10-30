@@ -49,6 +49,8 @@ function createBackend(): { api: KinnocApi; realtime: RealtimeClient } {
       baseUrl: env.apiUrl,
       getAccessToken,
       onUnauthorized: () => unauthorizedHandler(),
+      // Render free tier spin-up can take up to 45 seconds; keep the request alive rather than aborting early.
+      timeoutMs: 45_000,
     });
     const noUpload = () => Promise.reject(unsupported('Image upload'));
     const api = createHttpApi(client, {

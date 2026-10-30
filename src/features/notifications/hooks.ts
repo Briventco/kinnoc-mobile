@@ -11,6 +11,7 @@ export function useNotifications() {
     queryFn: ({ pageParam }) => api.notifications.list(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextCursor,
+    enabled: api.capabilities.social,
   });
 }
 
@@ -19,6 +20,7 @@ export function useUnreadNotificationCount() {
     queryKey: keys.unreadNotifications,
     queryFn: () => api.notifications.unreadCount(),
     refetchInterval: 60_000,
+    enabled: api.capabilities.social,
   });
 }
 
@@ -56,7 +58,11 @@ export function useMarkAllNotificationsRead() {
 }
 
 export function useNotificationPreferences() {
-  return useQuery({ queryKey: keys.notificationPrefs, queryFn: () => api.notifications.preferences() });
+  return useQuery({
+    queryKey: keys.notificationPrefs,
+    queryFn: () => api.notifications.preferences(),
+    enabled: api.capabilities.social,
+  });
 }
 
 export function useUpdateNotificationPreferences() {

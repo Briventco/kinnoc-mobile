@@ -71,12 +71,14 @@ export default function FeedScreen() {
         />
         <View style={styles.headerActions}>
           <IconButton icon={Search} label="Search Discover" onPress={() => router.push({ pathname: '/discover', params: { search: String(Date.now()) } })} />
-          <IconButton
-            icon={Bell}
-            label={unread.data ? `Notifications, ${unread.data} new` : 'Notifications'}
-            onPress={() => router.push('/notifications')}
-            badge={unread.data ? <NewDot /> : null}
-          />
+          {api.capabilities.social ? (
+            <IconButton
+              icon={Bell}
+              label={unread.data ? `Notifications, ${unread.data} new` : 'Notifications'}
+              onPress={() => router.push('/notifications')}
+              badge={unread.data ? <NewDot /> : null}
+            />
+          ) : null}
         </View>
       </View>
       <Tabs items={SCOPES} value={scope} onChange={select} />
@@ -92,19 +94,22 @@ export default function FeedScreen() {
 function Composer() {
   const me = useMe();
   return (
-    <Pressable
-      onPress={() => router.push('/compose')}
-      style={styles.composer}
-      accessibilityRole="button"
-      accessibilityLabel="Share something with your communities"
-      pressedOpacity={0.7}
-    >
-      <Avatar name={me.data?.displayName ?? ''} uri={me.data?.avatarUrl} size={36} />
-      <Text variant="message" color="textTertiary" style={styles.flex} numberOfLines={1}>
-        Share something with your communities
-      </Text>
+    // Two sibling buttons, not one inside the other, so screen readers reach both.
+    <View style={styles.composer}>
+      <Pressable
+        onPress={() => router.push('/compose')}
+        style={styles.composerPrompt}
+        accessibilityRole="button"
+        accessibilityLabel="Share something with your communities"
+        pressedOpacity={0.7}
+      >
+        <Avatar name={me.data?.displayName ?? ''} uri={me.data?.avatarUrl} size={36} />
+        <Text variant="message" color="textTertiary" style={styles.flex} numberOfLines={1}>
+          Share something with your communities
+        </Text>
+      </Pressable>
       <IconButton icon={ImageIcon} label="Add a photo" color="textTertiary" onPress={() => router.push({ pathname: '/compose', params: { photo: '1' } })} />
-    </Pressable>
+    </View>
   );
 }
 
@@ -183,5 +188,6 @@ const styles = StyleSheet.create({
   header: { height: size.headerHeight, flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10 },
   lockup: { height: 34, width: 70, marginRight: 'auto' },
   headerActions: { flexDirection: 'row' },
-  composer: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[2] },
+  composer: { flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[2] },
+  composerPrompt: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 44 },
 });

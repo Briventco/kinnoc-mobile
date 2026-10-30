@@ -12,6 +12,7 @@ import { Text } from '@/components/Text';
 import { useMarkStorySeen, useStories } from '@/features/stories/hooks';
 import { StoryAvatar } from '@/features/stories/StoryRow';
 import { formatAge } from '@/lib/format';
+import { api } from '@/services';
 import { colors, gutter, space, type } from '@/theme';
 
 const FRAME_MS = 5000;
@@ -28,6 +29,16 @@ export default function StoryViewer() {
   // Freeze the order on open so marking frames seen doesn't reshuffle reels mid-viewing.
   const [reels] = useState<StoryReel[]>(() => (stories.data ?? []).filter((r) => r.frames.length));
   const startReel = Math.max(0, reels.findIndex((r) => r.author.id === id));
+
+  useEffect(() => {
+    if (!api.capabilities.social) {
+      router.replace('/');
+    }
+  }, []);
+
+  if (!api.capabilities.social) {
+    return null;
+  }
 
   if (!reels.length) {
     return (
@@ -49,6 +60,7 @@ function Viewer({ reels, startReel }: { reels: StoryReel[]; startReel: number })
   const [progress] = useState(() => new Animated.Value(0));
   const [loadedFrameId, setLoadedFrameId] = useState<string | null>(null);
   const [screenReader, setScreenReader] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
   const animation = useRef<Animated.CompositeAnimation | null>(null);
   const nextRef = useRef<() => void>(() => {});
   const longPressed = useRef(false);
@@ -126,7 +138,8 @@ function Viewer({ reels, startReel }: { reels: StoryReel[]; startReel: number })
       longPressed.current = false;
       return;
     }
-    if (e.nativeEvent.locationX < width / 3) prev();
+    const viewerWidth = containerWidth || width;
+    if (e.nativeEvent.locationX < viewerWidth / 3) prev();
     else next();
   };
 
@@ -134,7 +147,7 @@ function Viewer({ reels, startReel }: { reels: StoryReel[]; startReel: number })
   const name = reel.isMine ? 'Your story' : reel.author.displayName;
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}>
       <StatusBar style="light" />
       <Pressable
         style={StyleSheet.absoluteFill}

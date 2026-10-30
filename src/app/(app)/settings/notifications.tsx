@@ -8,6 +8,7 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { useNotificationPreferences, useUpdateNotificationPreferences } from '@/features/notifications/hooks';
 import { SettingSection, ToggleRow } from '@/features/settings/SettingRow';
+import { api } from '@/services';
 import { colors, gutter, space } from '@/theme';
 
 const ROWS: { key: keyof NotificationPreferences; label: string; detail: string }[] = [
@@ -22,6 +23,17 @@ export default function NotificationSettings() {
   const prefs = useNotificationPreferences();
   const update = useUpdateNotificationPreferences();
   const toast = useToast();
+
+  if (!api.capabilities.social) {
+    return (
+      <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+        <ScreenHeader title="Notification settings" />
+        <View style={styles.push}>
+          <Banner tone="info" message="Notifications and notification settings are not available on this version of the backend yet." />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
