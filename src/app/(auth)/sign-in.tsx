@@ -39,6 +39,7 @@ export default function SignIn() {
       {formError ? <Banner tone="warning" message={formError} /> : null}
       <TextField
         label="Email"
+        placeholder="you@example.com"
         value={email}
         onChangeText={setEmail}
         onBlur={() => email && setErrors((e) => ({ ...e, email: validateEmail(email) }))}
@@ -53,6 +54,7 @@ export default function SignIn() {
       <TextField
         ref={passwordRef}
         label="Password"
+        placeholder="Enter your password"
         value={password}
         onChangeText={setPassword}
         error={errors.password}
