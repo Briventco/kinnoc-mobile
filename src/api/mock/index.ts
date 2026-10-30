@@ -760,6 +760,18 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       },
     },
 
+    verification: {
+      async profile(username) {
+        await delay(150);
+        return clone(fx.verifications[username] ?? { isVerified: false, category: null, organisation: null, position: null, verifiedAt: null });
+      },
+      async mine() {
+        await delay(150);
+        const v = fx.verifications[me().username];
+        return clone(v ? { ...v, status: 'active' as const, expiresAt: null } : { isVerified: false, status: 'none' as const, category: null, organisation: null, position: null, verifiedAt: null, expiresAt: null });
+      },
+    },
+
     notifications: {
       async list(cursor) {
         await delay();

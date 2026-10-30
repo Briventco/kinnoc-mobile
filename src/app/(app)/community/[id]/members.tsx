@@ -15,6 +15,7 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { useCommunity, useCommunityAdmin, useMembers } from '@/features/communities/hooks';
 import { useMe } from '@/features/profile/hooks';
+import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flatten } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
 import { colors, gutter, space } from '@/theme';
@@ -93,10 +94,7 @@ export default function Members() {
               >
                 <Avatar name={item.displayName} uri={item.avatarUrl} size={44} />
                 <View style={styles.body}>
-                  <Text variant="rowTitle" numberOfLines={1}>
-                    {item.displayName}
-                    {isMe ? ' (you)' : ''}
-                  </Text>
+                  <VerifiedName name={`${item.displayName}${isMe ? ' (you)' : ''}`} username={item.username} variant="rowTitle" />
                   <Text variant="meta" color="textTertiary" numberOfLines={1}>
                     @{item.username}
                   </Text>

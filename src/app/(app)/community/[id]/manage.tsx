@@ -15,6 +15,7 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { validateUsername } from '@/features/auth/validation';
 import { useCommunity, useCommunityAdmin, useInvitations, useJoinRequests } from '@/features/communities/hooks';
+import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flatten } from '@/lib/cache';
 import { formatInboxTime } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
@@ -51,9 +52,7 @@ function PersonRow({ person, detail, children }: { person: Person; detail: strin
     <View style={styles.row} accessible={false}>
       <Avatar name={person.displayName} uri={person.avatarUrl} size={44} />
       <View style={styles.body}>
-        <Text variant="rowTitle" numberOfLines={1}>
-          {person.displayName}
-        </Text>
+        <VerifiedName name={person.displayName} username={person.username} variant="rowTitle" />
         <Text variant="meta" color="textTertiary" numberOfLines={1}>
           @{person.username} · {detail}
         </Text>

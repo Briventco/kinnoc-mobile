@@ -93,6 +93,13 @@ function waitFor<T extends ConversationEvent>(events: ConversationEvent[], match
     }
   });
 
+  it('reads the public verification badge, and an unknown username as unverified', async () => {
+    expect(await api.verification.profile('no-such-user-kinnoc-test')).toEqual({ isVerified: false, category: null, organisation: null, position: null, verifiedAt: null });
+    // Optionally a known verified username, to see a real badge come through.
+    const verified = env('KINNOC_VERIFIED_USERNAME');
+    if (verified) expect(await api.verification.profile(verified)).toMatchObject({ isVerified: true, category: expect.any(String) });
+  });
+
   it('searches, and reports an unknown event as not found', async () => {
     expect(Array.isArray((await api.discover.list('events', 'zzzz-no-such-event', null)).items)).toBe(true);
     const error = await api.discover.get('no-such-event-slug').catch((e: unknown) => e);

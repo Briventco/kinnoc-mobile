@@ -26,6 +26,7 @@ import type {
   Message,
   MessagePage,
   NotificationPreferences,
+  OwnVerification,
   Page,
   Post,
   PostImage,
@@ -39,6 +40,7 @@ import type {
   SaveTarget,
   SendMessageInput,
   UploadedImage,
+  Verification,
 } from './types';
 
 /**
@@ -150,6 +152,12 @@ export interface KinnocApi {
     posts(userId: ID, cursor: string | null): Promise<Page<Post>>;
     /** Replaces the caller's interests with these catalogue slugs (from `communities.categories`). May be empty. */
     setInterests(slugs: string[]): Promise<Profile>;
+  };
+  verification: {
+    /** The public badge for a username. A profile that is hidden or gone reads as not verified. */
+    profile(username: string): Promise<Verification>;
+    /** The signed-in person's own verification, including expired or revoked. */
+    mine(): Promise<OwnVerification>;
   };
   notifications: {
     list(cursor: string | null): Promise<Page<AppNotification>>;

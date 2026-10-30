@@ -1,5 +1,5 @@
 import { apiComment, apiCommunity, apiEvent, apiMessage, apiPost } from '../__fixtures__/payloads';
-import { type ApiEvent, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toReceipts } from '../mappers';
+import { type ApiEvent, type ApiOwnVerification, type ApiVerification, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toOwnVerification, toReceipts, toVerification } from '../mappers';
 
 describe('toCommunity', () => {
   it('maps visibility, policy and category', () => {
@@ -207,5 +207,83 @@ describe('toEvent', () => {
     expect(page.items.map((e) => e.id)).toEqual(['bb61fe0e-0436-414c-bd03-cea100c76ae8']);
     expect(page.nextCursor).toBe('c2');
     expect(toEventPage({} as never)).toEqual({ items: [], nextCursor: null });
+  });
+});
+
+describe('toVerification', () => {
+  const active: ApiVerification = {
+    isVerified: true,
+    status: 'ACTIVE',
+    category: 'FOUNDER',
+    organisation: 'Brivent Global Innovations',
+    position: 'Founder',
+    verifiedAt: '2026-10-30T22:58:43.987Z',
+  };
+  const none: ApiVerification = { isVerified: false, status: 'NONE', category: null, organisation: null, position: null, verifiedAt: null };
+
+  it('keeps an active verification and its details', () => {
+    expect(toVerification(active)).toEqual({
+      isVerified: true,
+      category: 'founder',
+      organisation: 'Brivent Global Innovations',
+      position: 'Founder',
+      verifiedAt: '2026-10-30T22:58:43.987Z',
+    });
+  });
+
+  it('maps every category, and reads an unknown one as other', () => {
+    for (const [api, app] of [
+      ['STUDENT_LEADER', 'student-leader'],
+      ['COMMUNITY_LEADER', 'community-leader'],
+      ['ORGANISATION_REPRESENTATIVE', 'organisation-representative'],
+      ['OTHER', 'other'],
+      ['AMBASSADOR', 'other'],
+    ]) {
+      expect(toVerification({ ...active, category: api }).category).toBe(app);
+    }
+  });
+
+  it('shows no badge for unverified, revoked or expired people (all answer NONE)', () => {
+    expect(toVerification(none)).toEqual({ isVerified: false, category: null, organisation: null, position: null, verifiedAt: null });
+  });
+
+  it('needs both signals, so a contradictory or malformed answer shows no badge', () => {
+    expect(toVerification({ ...active, status: 'NONE' }).isVerified).toBe(false);
+    expect(toVerification({ ...none, status: 'ACTIVE' }).isVerified).toBe(false);
+    expect(toVerification({ ...active, isVerified: 'yes' as never }).isVerified).toBe(false);
+    expect(toVerification(null).isVerified).toBe(false);
+    expect(toVerification({} as ApiVerification).isVerified).toBe(false);
+  });
+});
+
+describe('toOwnVerification', () => {
+  const own = (over: Partial<ApiOwnVerification>): ApiOwnVerification => ({
+    isVerified: true,
+    status: 'ACTIVE',
+    category: 'FOUNDER',
+    organisation: 'Brivent',
+    position: 'Founder',
+    verifiedAt: '2026-10-30T09:00:00.000Z',
+    expiresAt: null,
+    ...over,
+  });
+
+  it('is verified only while active', () => {
+    expect(toOwnVerification(own({}))).toMatchObject({ isVerified: true, status: 'active' });
+  });
+
+  it('tells the owner it expired or was revoked, keeping what lapsed, with no badge', () => {
+    expect(toOwnVerification(own({ isVerified: false, status: 'EXPIRED', expiresAt: '2026-10-01T00:00:00.000Z' }))).toMatchObject({
+      isVerified: false,
+      status: 'expired',
+      category: 'founder',
+      expiresAt: '2026-10-01T00:00:00.000Z',
+    });
+    expect(toOwnVerification(own({ isVerified: false, status: 'REVOKED' }))).toMatchObject({ isVerified: false, status: 'revoked' });
+  });
+
+  it('never trusts isVerified on a non-active status', () => {
+    expect(toOwnVerification(own({ isVerified: true, status: 'EXPIRED' })).isVerified).toBe(false);
+    expect(toOwnVerification(own({ status: 'UNKNOWN' as never }))).toMatchObject({ isVerified: false, status: 'none' });
   });
 });

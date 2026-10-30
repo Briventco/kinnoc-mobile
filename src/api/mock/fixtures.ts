@@ -7,6 +7,7 @@ import { Image } from 'react-native';
 
 import type {
   AppNotification,
+  Verification,
   Comment,
   Community,
   CommunityUpdate,
@@ -79,6 +80,12 @@ export const users = {
   ayo: person('u_ayo', 'Ayo B.', 'ayo', avatars.ayo),
   mira: person('u_mira', 'Mira E.', 'mira', avatars.mira),
   daniel: person('u_daniel', 'Daniel F.', 'daniel', avatars.daniel),
+};
+
+/** Sample blue ticks by username. Everyone else is unverified. */
+export const verifications: Record<string, Verification> = {
+  calebabisoye: { isVerified: true, category: 'founder', organisation: 'Brivent Global Innovations', position: 'Founder', verifiedAt: '2026-10-30T09:00:00.000Z' },
+  tovia: { isVerified: true, category: 'community-leader', organisation: 'UNIOSUN Community', position: 'Community lead', verifiedAt: '2026-10-28T09:00:00.000Z' },
 };
 
 export const myProfile: Profile = {

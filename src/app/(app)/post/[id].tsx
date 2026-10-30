@@ -18,6 +18,7 @@ import { useCommunity } from '@/features/communities/hooks';
 import { COMMENT_MAX_LENGTH, createIdempotencyKey } from '@/features/feed/drafts';
 import { useAddComment, useComments, useDeleteComment, useEditComment, usePost, useReplies } from '@/features/feed/hooks';
 import { PostRow } from '@/features/feed/PostRow';
+import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flattenUnique } from '@/lib/cache';
 import { formatAge, plural } from '@/lib/format';
 import { KEYBOARD_BEHAVIOR, useBottomBarInset } from '@/lib/useKeyboardVisible';
@@ -41,13 +42,19 @@ function CommentRow({ comment, actions, reply }: { comment: Comment; actions: Co
     <View style={[styles.comment, reply && styles.reply]}>
       <Avatar name={comment.author?.displayName ?? ''} uri={comment.author?.avatarUrl} size={reply ? 24 : 32} />
       <View style={styles.flex}>
-        <Text variant="meta" color="textTertiary">
-          <Text variant="name" style={styles.commentName}>
-            {deleted ? 'Deleted' : (comment.author?.displayName ?? 'Former member')}
-          </Text>{' '}
-          · {formatAge(comment.createdAt)}
-          {comment.editedAt && !deleted ? ' · Edited' : ''}
-        </Text>
+        <View style={styles.commentHead}>
+          <VerifiedName
+            name={deleted ? 'Deleted' : (comment.author?.displayName ?? 'Former member')}
+            username={deleted ? null : comment.author?.username}
+            style={styles.commentName}
+            containerStyle={styles.shrink}
+          />
+          <Text variant="meta" color="textTertiary">
+            {' '}
+            · {formatAge(comment.createdAt)}
+            {comment.editedAt && !deleted ? ' · Edited' : ''}
+          </Text>
+        </View>
         {deleted ? (
           <Text variant="message" color="textTertiary">
             This comment was deleted.
@@ -317,6 +324,8 @@ const styles = StyleSheet.create({
   comment: { flexDirection: 'row', gap: space[3], paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[3] },
   reply: { paddingLeft: gutter + 44, paddingVertical: space[2] },
   commentName: { fontSize: 14 },
+  commentHead: { flexDirection: 'row', alignItems: 'center' },
+  shrink: { flexShrink: 1 },
   replyButton: { alignSelf: 'flex-start', marginTop: 4 },
   threadToggle: { paddingLeft: gutter + 44, paddingBottom: space[3], alignSelf: 'flex-start' },
   modeBar: { flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface2 },

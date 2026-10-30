@@ -13,6 +13,7 @@ import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { useToggleSave } from '@/features/saved/hooks';
+import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { formatAge, plural } from '@/lib/format';
 import { openExternal } from '@/lib/links';
 import { api } from '@/services';
@@ -69,9 +70,7 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
       <View style={styles.header}>
         <Avatar name={post.author.displayName} uri={post.author.avatarUrl} size={40} />
         <View style={styles.flex}>
-          <Text variant="name" numberOfLines={1}>
-            {post.author.displayName}
-          </Text>
+          <VerifiedName name={post.author.displayName} username={post.author.username} />
           <Text variant="meta" color="textTertiary" numberOfLines={1}>
             {post.community ? (
               <Text

@@ -19,12 +19,15 @@ import type {
   MembershipStatus,
   Message,
   MessagePage,
+  OwnVerification,
   Page,
   Person,
   Post,
   Profile,
   Receipts,
   UserSummary,
+  Verification,
+  VerificationCategory,
 } from '../types';
 
 type ApiVisibility = 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
@@ -431,4 +434,63 @@ export function toEvent(e: ApiEvent): EventItem | null {
 export function toEventPage(page: Page<ApiEvent>): Page<EventItem> {
   const items = Array.isArray(page?.items) ? page.items : [];
   return { items: items.map(toEvent).filter((e): e is EventItem => e !== null), nextCursor: typeof page?.nextCursor === 'string' ? page.nextCursor : null };
+}
+
+/** `GET /profiles/:username/verification` (kinnoc-api docs/verification.md). */
+export interface ApiVerification {
+  isVerified: boolean;
+  status: 'ACTIVE' | 'NONE';
+  category: string | null;
+  organisation: string | null;
+  position: string | null;
+  verifiedAt: string | null;
+}
+
+/** `GET /users/me/verification`: the owner also sees expired and revoked records. */
+export interface ApiOwnVerification extends Omit<ApiVerification, 'status'> {
+  status: 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'NONE';
+  expiresAt: string | null;
+}
+
+const CATEGORY: Record<string, VerificationCategory> = {
+  FOUNDER: 'founder',
+  STUDENT_LEADER: 'student-leader',
+  COMMUNITY_LEADER: 'community-leader',
+  ORGANISATION_REPRESENTATIVE: 'organisation-representative',
+  OTHER: 'other',
+};
+
+export const NOT_VERIFIED: Verification = { isVerified: false, category: null, organisation: null, position: null, verifiedAt: null };
+
+/**
+ * The API decides who is verified. A badge needs both of its signals, `isVerified` and an ACTIVE
+ * status, so a malformed or contradictory answer never shows one. Details are kept only for an
+ * active verification.
+ */
+export function toVerification(v: ApiVerification | null | undefined): Verification {
+  if (!v || v.isVerified !== true || v.status !== 'ACTIVE') return NOT_VERIFIED;
+  return {
+    isVerified: true,
+    category: typeof v.category === 'string' ? (CATEGORY[v.category] ?? 'other') : null,
+    organisation: text(v.organisation),
+    position: text(v.position),
+    verifiedAt: isInstant(v.verifiedAt) ? v.verifiedAt : null,
+  };
+}
+
+const OWN_STATUS = { ACTIVE: 'active', EXPIRED: 'expired', REVOKED: 'revoked', NONE: 'none' } as const;
+
+export function toOwnVerification(v: ApiOwnVerification | null | undefined): OwnVerification {
+  const status = v && v.status in OWN_STATUS ? OWN_STATUS[v.status] : 'none';
+  const active = !!v && v.isVerified === true && status === 'active';
+  return {
+    isVerified: active,
+    status,
+    // The owner keeps the details of an expired or revoked record, to know what lapsed.
+    category: v && typeof v.category === 'string' ? (CATEGORY[v.category] ?? 'other') : null,
+    organisation: text(v?.organisation),
+    position: text(v?.position),
+    verifiedAt: isInstant(v?.verifiedAt) ? v.verifiedAt : null,
+    expiresAt: isInstant(v?.expiresAt) ? v.expiresAt : null,
+  };
 }
