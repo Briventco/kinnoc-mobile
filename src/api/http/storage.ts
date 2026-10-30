@@ -41,10 +41,58 @@ async function readImageBytes(uri: string): Promise<ArrayBuffer> {
   return new File(uri).arrayBuffer();
 }
 
+/** Converts browser-picked HEIC/HEIF blobs to standard JPEG blobs before canvas processing. */
+async function normalizeInputUri(uri: string): Promise<{ uri: string; cleanup?: () => void }> {
+  if (Platform.OS !== 'web') return { uri };
+
+  try {
+    const res = await fetch(uri);
+    if (!res.ok) return { uri };
+    const blob = await res.blob();
+    const type = (blob.type || '').toLowerCase();
+    const isHeic = type.includes('heic') || type.includes('heif') || uri.toLowerCase().includes('.heic') || uri.toLowerCase().includes('.heif');
+
+    let looksLikeHeic = isHeic;
+    if (!looksLikeHeic && blob.size >= 16) {
+      const header = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+      const str = String.fromCharCode(...header);
+      if (str.includes('ftyp') && (str.includes('heic') || str.includes('mif1') || str.includes('msf1') || str.includes('heix') || str.includes('hevc'))) {
+        looksLikeHeic = true;
+      }
+    }
+
+    if (looksLikeHeic) {
+      try {
+        const module = (await import('heic2any')) as unknown as { default?: (options: unknown) => Promise<Blob | Blob[]> };
+        const heic2any = module.default ?? (module as unknown as (options: unknown) => Promise<Blob | Blob[]>);
+        const converted = await heic2any({ blob, toType: 'image/jpeg', quality: 0.9 });
+        const jpegBlob = Array.isArray(converted) ? converted[0] : converted;
+        const jpegUrl = URL.createObjectURL(jpegBlob);
+        return {
+          uri: jpegUrl,
+          cleanup: () => {
+            try {
+              URL.revokeObjectURL(jpegUrl);
+            } catch {}
+          },
+        };
+      } catch (convErr) {
+        if (convErr instanceof ApiError) throw convErr;
+        throw new ApiError('validation', 'Could not convert HEIC photo. Please choose a JPEG or PNG image.');
+      }
+    }
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+  }
+
+  return { uri };
+}
+
 /** Re-encodes any picked image (HEIC, PNG…) as a JPEG within the limits. */
 async function toJpeg(localUri: string, limits: ImageLimits): Promise<{ uri: string; width: number; height: number }> {
+  const normalized = await normalizeInputUri(localUri);
   try {
-    const original = await ImageManipulator.manipulate(localUri).renderAsync();
+    const original = await ImageManipulator.manipulate(normalized.uri).renderAsync();
     let width = original.width;
     let height = original.height;
     let crop: { originX: number; originY: number; width: number; height: number } | null = null;
@@ -58,7 +106,7 @@ async function toJpeg(localUri: string, limits: ImageLimits): Promise<{ uri: str
       longest > limits.maxEdge ? (width >= height ? { width: limits.maxEdge, height: null } : { width: null, height: limits.maxEdge }) : null;
     let image = original;
     if (crop || resize) {
-      const chain = ImageManipulator.manipulate(localUri);
+      const chain = ImageManipulator.manipulate(normalized.uri);
       if (crop) chain.crop(crop);
       if (resize) chain.resize(resize);
       image = await chain.renderAsync();
@@ -67,7 +115,13 @@ async function toJpeg(localUri: string, limits: ImageLimits): Promise<{ uri: str
     return { uri: saved.uri, width: saved.width, height: saved.height };
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    const msg = error instanceof Error ? error.message : '';
+    if (/exceeded|large|size/i.test(msg)) {
+      throw new ApiError('validation', 'Image is too large to process.');
+    }
     throw new ApiError('validation', 'Unsupported image format or invalid image file.');
+  } finally {
+    normalized.cleanup?.();
   }
 }
 

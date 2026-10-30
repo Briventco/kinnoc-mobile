@@ -34,6 +34,12 @@ export function InterestPicker({ picked, onChange, label = 'Interests' }: { pick
         </View>
       ) : options.isError ? (
         <ErrorState error={options.error} onRetry={() => options.refetch()} style={styles.error} />
+      ) : options.data.length === 0 ? (
+        <View style={styles.empty}>
+          <Text variant="post" color="textSecondary">
+            No interest categories are available right now. You can continue and add them later.
+          </Text>
+        </View>
       ) : (
         <>
           <View style={styles.tags}>
@@ -70,6 +76,7 @@ export function InterestPicker({ picked, onChange, label = 'Interests' }: { pick
 const styles = StyleSheet.create({
   root: { gap: space[3] },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
+  empty: { paddingVertical: space[4], alignItems: 'flex-start' },
   tag: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderRadius: radius.tag, paddingHorizontal: 12, minHeight: 36 },
   tagOn: { borderColor: colors.primarySubtleStrong, backgroundColor: colors.primarySubtle },
   tagText: { fontSize: 14 },
