@@ -190,6 +190,8 @@ export function EmptyState({
   action,
   secondary,
   lifted,
+  illustration = true,
+  style,
 }: {
   title: string;
   body: string;
@@ -197,21 +199,29 @@ export function EmptyState({
   secondary?: { label: string; onPress: () => void };
   /** Leading element of the lifted row; defaults to a filled bookmark row. */
   lifted?: ReactNode;
+  /**
+   * The ghost rows suit lists of saved things. Leave them out where they would read as a list
+   * still loading, such as the feed.
+   */
+  illustration?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <View style={styles.empty}>
-      <View style={styles.illustration} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <GhostRow />
-        <View style={styles.liftedRow}>
-          {lifted ?? <SkeletonBlock style={styles.ghostSquare} />}
-          <View style={styles.skeletonLines}>
-            <View style={[styles.ghostLine, { width: '80%', backgroundColor: colors.textSecondary }]} />
-            <View style={[styles.ghostLine, { width: '40%' }]} />
+    <View style={[styles.empty, style]}>
+      {illustration ? (
+        <View style={styles.illustration} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <GhostRow />
+          <View style={styles.liftedRow}>
+            {lifted ?? <SkeletonBlock style={styles.ghostSquare} />}
+            <View style={styles.skeletonLines}>
+              <View style={[styles.ghostLine, { width: '80%', backgroundColor: colors.textSecondary }]} />
+              <View style={[styles.ghostLine, { width: '40%' }]} />
+            </View>
+            <Bookmark size={22} color={colors.primary} fill={colors.primary} strokeWidth={1.75} />
           </View>
-          <Bookmark size={22} color={colors.primary} fill={colors.primary} strokeWidth={1.75} />
+          <GhostRow round />
         </View>
-        <GhostRow round />
-      </View>
+      ) : null}
       <Text variant="pageTitle" accessibilityRole="header">
         {title}
       </Text>

@@ -167,10 +167,14 @@ function FeedList({ scope }: { scope: FeedScope }) {
             title={EMPTY[scope].title}
             body={EMPTY[scope].body}
             action={{ label: EMPTY[scope].action.label, onPress: () => router.push(EMPTY[scope].action.href) }}
+            illustration={false}
+            style={styles.empty}
           />
         )
       }
       ListFooterComponent={<ListFooter loading={feed.isFetchingNextPage} />}
+      // An empty feed fills the space down to the tab bar, so its message can sit in the middle.
+      contentContainerStyle={items.length ? undefined : styles.fill}
       // One page at a time, and not while a refresh is reloading the pages already shown.
       onEndReached={() => feed.hasNextPage && !feed.isFetching && feed.fetchNextPage()}
       onEndReachedThreshold={0.6}
@@ -185,6 +189,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   flex: { flex: 1 },
   hidden: { display: 'none' },
+  fill: { flexGrow: 1 },
+  // Centred in the space under the composer, nudged above the middle so it reads as balanced.
+  empty: { flex: 1, justifyContent: 'center', paddingTop: space[6], paddingBottom: space[8] * 2 },
   header: { height: size.headerHeight, flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10 },
   lockup: { height: 34, width: 70, marginRight: 'auto' },
   headerActions: { flexDirection: 'row' },
