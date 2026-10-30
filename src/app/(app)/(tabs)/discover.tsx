@@ -16,14 +16,21 @@ import { DiscoverRow, FeaturedItem } from '@/features/discover/DiscoverRows';
 import { useDiscoverHome, useDiscoverList } from '@/features/discover/hooks';
 import { flatten } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
+import { api } from '@/services';
 import { colors, gutter, space } from '@/theme';
 
-const FILTERS: { key: DiscoverFilter; label: string }[] = [
+const FILTERS: { key: DiscoverFilter; label: string; kind?: DiscoverItem['kind'] }[] = [
   { key: 'all', label: 'All' },
-  { key: 'events', label: 'Events' },
-  { key: 'opportunities', label: 'Opportunities' },
-  { key: 'resources', label: 'Resources' },
+  { key: 'events', label: 'Events', kind: 'event' },
+  { key: 'opportunities', label: 'Opportunities', kind: 'opportunity' },
+  { key: 'resources', label: 'Resources', kind: 'resource' },
 ];
+const KINDS = api.capabilities.discoverKinds;
+/** Only what the backend can list gets a tab. */
+const TABS = FILTERS.filter((f) => !f.kind || KINDS.includes(f.kind));
+const ONLY_EVENTS = KINDS.length === 1 && KINDS[0] === 'event';
+/** Search starts at two characters, as the API requires. */
+const MIN_QUERY = 2;
 
 const ROW_INSET = gutter + 44 + space[3];
 
@@ -31,7 +38,8 @@ export default function DiscoverScreen() {
   const params = useLocalSearchParams<{ search?: string }>();
   const [filter, setFilter] = useState<DiscoverFilter>('all');
   const [query, setQuery] = useState('');
-  const q = useDeferredValue(query.trim());
+  const typed = useDeferredValue(query.trim());
+  const q = typed.length >= MIN_QUERY ? typed : '';
 
   const showHome = filter === 'all' && !q;
 
@@ -40,9 +48,9 @@ export default function DiscoverScreen() {
       <PageHeader title="Discover" actions={<IconButton icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} />} />
       <View style={styles.search}>
         {/* Opened from the Feed search button: each press passes a new token, which remounts and focuses the field. */}
-        <SearchField key={params.search ?? 'search'} autoFocus={!!params.search} value={query} onChangeText={setQuery} placeholder="Events, internships, scholarships, guides" />
+        <SearchField key={params.search ?? 'search'} autoFocus={!!params.search} value={query} onChangeText={setQuery} placeholder={ONLY_EVENTS ? 'Search events, organisers, cities' : 'Events, internships, scholarships, guides'} />
       </View>
-      <Tabs items={FILTERS} value={filter} onChange={setFilter} />
+      <Tabs items={TABS} value={filter} onChange={setFilter} />
       {showHome ? <DiscoverHomeView onSeeAll={setFilter} /> : <DiscoverList filter={filter} query={q} />}
     </SafeAreaView>
   );
@@ -91,11 +99,13 @@ function DiscoverHomeView({ onSeeAll }: { onSeeAll: (f: DiscoverFilter) => void 
     >
       {empty ? (
         <Text variant="post" color="textSecondary" style={styles.empty}>
-          Nothing to discover right now. New events and opportunities appear here as communities share them.
+          {ONLY_EVENTS
+            ? 'No upcoming events right now. New events appear here as soon as they’re published.'
+            : 'Nothing to discover right now. New events and opportunities appear here as communities share them.'}
         </Text>
       ) : null}
       {thisWeek.length ? (
-        <Section title="This week on Kinnoc">
+        <Section title={ONLY_EVENTS ? 'This week' : 'This week on Kinnoc'}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip} decelerationRate="fast" snapToInterval={262 + space[3]}>
             {thisWeek.map((item) => (
               <FeaturedItem key={item.id} item={item} />
@@ -138,7 +148,11 @@ function DiscoverList({ filter, query }: { filter: DiscoverFilter; query: string
           <ErrorState error={list.error} onRetry={() => list.refetch()} />
         ) : (
           <Text variant="post" color="textSecondary" style={styles.empty}>
-            {query ? `Nothing matches “${query}”. Try another word or a different filter.` : 'Nothing here yet. Check back soon.'}
+            {query
+              ? `Nothing matches “${query}”. Try another word${TABS.length > 2 ? ' or a different filter' : ''}.`
+              : filter === 'events'
+                ? 'No upcoming events yet. Pull down to check again.'
+                : 'Nothing here yet. Check back soon.'}
           </Text>
         )
       }
