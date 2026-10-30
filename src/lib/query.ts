@@ -57,4 +57,6 @@ export const keys = {
   notificationPrefs: ['notification-prefs'] as const,
   saved: ['saved'] as const,
   stories: ['stories'] as const,
+  verification: (username: string) => ['verification', username.toLowerCase()] as const,
+  myVerification: ['verification', 'me'] as const,
 };

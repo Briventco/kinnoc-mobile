@@ -13,8 +13,11 @@ import {
   type ApiMember,
   type ApiMessage,
   type ApiMessagePage,
+  type ApiOwnVerification,
   type ApiPost,
+  type ApiVerification,
   mapPage,
+  NOT_VERIFIED,
   toAccount,
   toApiMembership,
   toApiRole,
@@ -30,7 +33,9 @@ import {
   toMessage,
   toMessagePage,
   toOwnProfile,
+  toOwnVerification,
   toPost,
+  toVerification,
 } from './mappers';
 
 const enc = encodeURIComponent;
@@ -285,6 +290,18 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
           throw error;
         }
       },
+    },
+    verification: {
+      profile: async (username) => {
+        try {
+          return toVerification(await client.get<ApiVerification>(`/profiles/${enc(username)}/verification`));
+        } catch (error) {
+          // The badge follows the profile's visibility: a hidden or deleted profile has none.
+          if (isApiError(error, 'PROFILE_NOT_FOUND')) return NOT_VERIFIED;
+          throw error;
+        }
+      },
+      mine: async () => toOwnVerification(await client.get<ApiOwnVerification>('/users/me/verification')),
     },
     notifications: {
       list: notAvailable('Notifications'),

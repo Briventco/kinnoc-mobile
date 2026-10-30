@@ -45,6 +45,27 @@ export interface Profile extends UserSummary {
   isFollowing: boolean;
 }
 
+/** Why someone was verified. Unknown values from a newer API read as `other`. */
+export type VerificationCategory = 'founder' | 'student-leader' | 'community-leader' | 'organisation-representative' | 'other';
+
+/**
+ * Someone's verification as the public sees it (the blue tick). Only an active verification is
+ * `isVerified`; revoked, expired and unverified people all look the same, by the API's design.
+ */
+export interface Verification {
+  isVerified: boolean;
+  category: VerificationCategory | null;
+  organisation: string | null;
+  position: string | null;
+  verifiedAt: ISODate | null;
+}
+
+/** Your own verification: the owner also learns when it has expired or been revoked. */
+export interface OwnVerification extends Verification {
+  status: 'active' | 'expired' | 'revoked' | 'none';
+  expiresAt: ISODate | null;
+}
+
 export interface ProfileUpdate {
   displayName: string;
   headline: string | null;

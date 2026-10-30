@@ -16,6 +16,8 @@ import { PostRow } from '@/features/feed/PostRow';
 import { useMe, useUserCommunities, useUserPosts } from '@/features/profile/hooks';
 import { useSaved } from '@/features/saved/hooks';
 import { SavedRow, savedKey } from '@/features/saved/SavedRow';
+import { useMyVerification } from '@/features/verification/hooks';
+import { verificationDetail, VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flatten } from '@/lib/cache';
 import { formatCount } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
@@ -63,9 +65,8 @@ export default function ProfileScreen() {
       <View style={styles.identity}>
         <Avatar name={p.displayName} uri={p.avatarUrl} size={76} />
         <View style={styles.flex}>
-          <Text style={styles.name} accessibilityRole="header" numberOfLines={2}>
-            {p.displayName}
-          </Text>
+          <VerifiedName name={p.displayName} username={p.username} variant="pageTitle" style={styles.name} numberOfLines={2} />
+          <OwnVerificationNote username={p.username} />
           {p.headline ? (
             <Text variant="preview" color="textSecondary">
               {p.headline}
@@ -224,6 +225,38 @@ export default function ProfileScreen() {
   );
 }
 
+/**
+ * Under your name: why you are verified, or, privately, that your verification has lapsed. Read
+ * from your own verification record; nothing shows while it loads or if it fails.
+ */
+function OwnVerificationNote({ username }: { username: string }) {
+  const { data } = useMyVerification(username);
+  if (!data) return null;
+  if (data.isVerified) {
+    const detail = verificationDetail(data);
+    return (
+      <View style={styles.verifiedLine}>
+        <Text variant="meta" color="primary">
+          Verified
+        </Text>
+        {detail ? (
+          <Text variant="meta" color="textTertiary" numberOfLines={1} style={styles.flex}>
+            · {detail}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+  if (data.status === 'expired' || data.status === 'revoked') {
+    return (
+      <Text variant="meta" color="textTertiary">
+        {data.status === 'expired' ? 'Your verification has expired.' : 'Your verification was removed.'} Only you can see this.
+      </Text>
+    );
+  }
+  return null;
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   flex: { flex: 1, minWidth: 0, gap: 2 },
@@ -231,6 +264,7 @@ const styles = StyleSheet.create({
   handle: { flex: 1, fontFamily: 'Figtree_700Bold', fontSize: 17 },
   identity: { flexDirection: 'row', alignItems: 'center', gap: space[4], paddingHorizontal: gutter, paddingTop: space[3] },
   name: { ...type.pageTitle, fontSize: 26, lineHeight: 30, color: colors.text },
+  verifiedLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   block: { paddingHorizontal: gutter, paddingTop: space[5], gap: space[3] },
   statsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space[5], rowGap: space[1] },

@@ -8,6 +8,7 @@ import { Avatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
+import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { formatTime } from '@/lib/format';
 import { openExternal } from '@/lib/links';
 import { colors, gutter, radius, space } from '@/theme';
@@ -123,12 +124,13 @@ export const MessageBubble = memo(function MessageBubble({ message, status, show
           </View>
           <View style={styles.theirsCol}>
             {showHeader ? (
-              <Text variant="meta" color="textTertiary" style={styles.senderLine}>
-                <Text variant="name" style={styles.senderName}>
-                  {senderName}
-                </Text>{' '}
-                {formatTime(message.sentAt)}
-              </Text>
+              <View style={[styles.senderLine, styles.senderRow]}>
+                <VerifiedName name={senderName} username={message.sender?.username} style={styles.senderName} containerStyle={styles.shrink} />
+                <Text variant="meta" color="textTertiary">
+                  {' '}
+                  {formatTime(message.sentAt)}
+                </Text>
+              </View>
             ) : null}
             {bubble}
             <Reactions message={message} onReact={onReact} />
@@ -256,6 +258,8 @@ const styles = StyleSheet.create({
   avatarCol: { width: 32 },
   theirsCol: { flex: 1, alignItems: 'flex-start' },
   senderLine: { marginBottom: 4 },
+  senderRow: { flexDirection: 'row', alignItems: 'center' },
+  shrink: { flexShrink: 1 },
   senderName: { fontFamily: 'Figtree_700Bold', fontSize: 14 },
   bubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.bubble, gap: 8, maxWidth: '100%' },
   theirs: { backgroundColor: colors.bubbleIncoming, borderTopLeftRadius: radius.tail },

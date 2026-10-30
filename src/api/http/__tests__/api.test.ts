@@ -233,6 +233,34 @@ describe('createHttpApi', () => {
     expect(api.capabilities.interestCatalogue).toBe(true);
   });
 
+  describe('verification', () => {
+    const body = { isVerified: true, status: 'ACTIVE', category: 'FOUNDER', organisation: 'Brivent', position: 'Founder', verifiedAt: '2026-10-30T09:00:00.000Z' };
+
+    it('looks up a profile badge by username', async () => {
+      const { client, calls } = fakeClient(() => body);
+      const api = createHttpApi(client, options);
+      expect(await api.verification.profile('ada lovelace')).toMatchObject({ isVerified: true, category: 'founder' });
+      expect(calls[0]).toEqual(['GET', '/profiles/ada%20lovelace/verification', undefined]);
+    });
+
+    it('reads a hidden or deleted profile as unverified, and passes on real failures', async () => {
+      const { client } = fakeClient((_m, path) => {
+        if (path.startsWith('/profiles/gone')) throw new ApiError('not_found', 'Profile not found', 404, {}, 'PROFILE_NOT_FOUND');
+        throw new ApiError('server', 'Down', 500);
+      });
+      const api = createHttpApi(client, options);
+      expect(await api.verification.profile('gone')).toMatchObject({ isVerified: false });
+      await expect(api.verification.profile('ada')).rejects.toMatchObject({ code: 'server' });
+    });
+
+    it('loads your own verification from /users/me/verification', async () => {
+      const { client, calls } = fakeClient(() => ({ ...body, isVerified: false, status: 'EXPIRED', expiresAt: '2026-10-01T00:00:00.000Z' }));
+      const api = createHttpApi(client, options);
+      expect(await api.verification.mine()).toMatchObject({ isVerified: false, status: 'expired' });
+      expect(calls[0][1]).toBe('/users/me/verification');
+    });
+  });
+
   describe('events', () => {
     const DAY = 24 * 60 * 60 * 1000;
     const at = (days: number) => new Date(Date.now() + days * DAY).toISOString();
