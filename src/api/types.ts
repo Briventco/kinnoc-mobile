@@ -495,6 +495,8 @@ export interface Account {
   id: ID;
   email: string | null;
   profile: { username: string; displayName: string } | null;
+  /** Suspended and deactivated accounts may sign in but cannot use Kinnoc. */
+  status: 'active' | 'suspended' | 'deactivated';
 }
 
 export interface CreateProfileInput {

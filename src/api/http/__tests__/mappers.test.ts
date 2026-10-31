@@ -1,5 +1,5 @@
 import { apiComment, apiCommunity, apiEvent, apiMessage, apiPost } from '../__fixtures__/payloads';
-import { type ApiEvent, type ApiOwnVerification, type ApiVerification, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toOwnVerification, toReceipts, toVerification } from '../mappers';
+import { type ApiEvent, type ApiOwnVerification, type ApiVerification, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toAccount, toOwnVerification, toReceipts, toVerification } from '../mappers';
 
 describe('toCommunity', () => {
   it('maps visibility, policy and category', () => {
@@ -285,5 +285,15 @@ describe('toOwnVerification', () => {
   it('never trusts isVerified on a non-active status', () => {
     expect(toOwnVerification(own({ isVerified: true, status: 'EXPIRED' })).isVerified).toBe(false);
     expect(toOwnVerification(own({ status: 'UNKNOWN' as never }))).toMatchObject({ isVerified: false, status: 'none' });
+  });
+});
+
+describe('toAccount', () => {
+  const base = { id: 'a1', email: 'a@b.c', profile: null, interests: [] };
+  it('keeps the status provisioning reports, which is how a suspended account shows up', () => {
+    expect(toAccount({ ...base, status: 'SUSPENDED' }).status).toBe('suspended');
+    expect(toAccount({ ...base, status: 'DEACTIVATED' }).status).toBe('deactivated');
+    expect(toAccount({ ...base, status: 'ACTIVE' }).status).toBe('active');
+    expect(toAccount(base).status).toBe('active');
   });
 });

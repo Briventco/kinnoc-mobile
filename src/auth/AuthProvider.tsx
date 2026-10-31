@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { clearAccountSnapshot, restoreAccountSnapshot, setAccountSnapshotOwner } from '@/features/account/snapshot';
 import { queryClient } from '@/lib/query';
 import { auth, realtime, setMockViewer, setUnauthorizedHandler } from '@/services';
 
@@ -34,8 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (mustClearCache(userId.current, nextId)) {
       realtime.reset();
       queryClient.clear();
+      void clearAccountSnapshot();
     }
     userId.current = nextId;
+    setAccountSnapshotOwner(nextId);
     setStatus(next ? 'signedIn' : 'signedOut');
   }, []);
 
@@ -44,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     auth
       .restore()
       .catch(() => null)
-      .then((restored) => active && apply(restored));
+      .then(async (restored) => {
+        // A returning user's last confirmed account opens the app at once; it is re-checked behind it.
+        if (restored) await restoreAccountSnapshot(restored.user.id, restored.user.email);
+        if (active) apply(restored);
+      });
     const unsubscribe = auth.subscribe((next) => active && apply(next));
     return () => {
       active = false;

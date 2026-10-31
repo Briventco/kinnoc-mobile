@@ -144,6 +144,7 @@ export interface ApiAccount {
     avatarUrl: string | null;
   } | null;
   interests: { slug: string; name: string }[];
+  status?: 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
 }
 
 const VISIBILITY: Record<ApiVisibility, CommunityVisibility> = { PUBLIC: 'public', UNLISTED: 'unlisted', PRIVATE: 'private' };
@@ -318,10 +319,18 @@ export const toInvitation = (i: ApiInvitation): Invitation => ({
   invitedAt: i.invitedAt,
 });
 
+/**
+ * `POST /users/provision` answers even for suspended and deactivated accounts (it skips the API's
+ * account check), so their status arrives here rather than as a 403, and the app must act on it.
+ */
+const ACCOUNT_STATUS = { ACTIVE: 'active', SUSPENDED: 'suspended', DEACTIVATED: 'deactivated' } as const;
+
 export const toAccount = (a: ApiAccount): Account => ({
   id: a.id,
   email: a.email,
   profile: a.profile ? { username: a.profile.username, displayName: a.profile.displayName } : null,
+  // An older API without the field means active, as before.
+  status: a.status && a.status in ACCOUNT_STATUS ? ACCOUNT_STATUS[a.status] : 'active',
 });
 
 /** The signed-in person's profile. Follows, headline, location and website are not in the API yet. */

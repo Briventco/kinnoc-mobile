@@ -105,7 +105,7 @@ describe('createHttpApi', () => {
   it('provisions the account on load', async () => {
     const { client, calls } = fakeClient(() => ({ id: 'u1', email: 'a@b.c', profile: null, interests: [] }));
     const api = createHttpApi(client, options);
-    await expect(api.account.load()).resolves.toEqual({ id: 'u1', email: 'a@b.c', profile: null });
+    await expect(api.account.load()).resolves.toEqual({ id: 'u1', email: 'a@b.c', profile: null, status: 'active' });
     expect(calls[0].slice(0, 2)).toEqual(['POST', '/users/provision']);
   });
 

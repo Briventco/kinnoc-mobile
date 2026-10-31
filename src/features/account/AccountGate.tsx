@@ -6,7 +6,8 @@ import { ApiError, describeError } from '@/api/errors';
 import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/Field';
-import { CenteredSpinner, ErrorState } from '@/components/States';
+import { BrandSplash } from '@/components/BrandSplash';
+import { ErrorState } from '@/components/States';
 import { Text } from '@/components/Text';
 import { AuthScaffold, AuthSwitch } from '@/features/auth/AuthScaffold';
 import { validateName, validateUsername } from '@/features/auth/validation';
@@ -23,27 +24,39 @@ import { useAccount, useCreateProfile } from './hooks';
  * profile, which creating and joining communities require.
  */
 export function AccountGate({ children }: { children: ReactNode }) {
-  const { status, signOut } = useAuth();
-  const account = useAccount(status === 'signedIn');
+  const { status, session, signOut } = useAuth();
+  const account = useAccount(status === 'signedIn' ? (session?.user.id ?? null) : null);
   // Right after a profile is created, offer interests once before the app opens.
   const [pickInterests, setPickInterests] = useState(false);
+  // Blocked when the API refuses the account (403), or reports it suspended or deactivated:
+  // provisioning still answers for those accounts, with their status.
+  const inactive = account.data && account.data.status !== 'active' ? account.data.status : null;
+  const blocked = !!inactive || (account.error instanceof ApiError && account.error.code === 'forbidden');
 
-  if (account.isPending) return <Connecting onSignOut={() => void signOut()} />;
-  if (account.isError) {
-    const blocked = account.error instanceof ApiError && account.error.code === 'forbidden';
-    return (
-      <SafeAreaView style={styles.root}>
-        <View style={styles.problem}>
-          <Text variant="pageTitle">{blocked ? "You can't use Kinnoc right now" : "We couldn't load your account"}</Text>
-          <ErrorState error={account.error} onRetry={blocked ? undefined : () => account.refetch()} style={styles.error} />
-          <Button label="Sign out" variant="quiet" onPress={() => void signOut()} />
-        </View>
-      </SafeAreaView>
-    );
+  // A confirmed account (this visit's, or the last one, re-checked behind the app) opens the app.
+  // Only the API saying the account is blocked takes that back; a failed re-check does not.
+  if (account.data && !blocked) {
+    if (!account.data.profile) return <CreateProfile onCreated={() => setPickInterests(api.capabilities.interestCatalogue)} />;
+    if (pickInterests) return <PickInterests onDone={() => setPickInterests(false)} />;
+    return <>{children}</>;
   }
-  if (!account.data.profile) return <CreateProfile onCreated={() => setPickInterests(api.capabilities.interestCatalogue)} />;
-  if (pickInterests) return <PickInterests onDone={() => setPickInterests(false)} />;
-  return <>{children}</>;
+  if (account.isPending) return <Connecting onSignOut={() => void signOut()} />;
+  return (
+    <SafeAreaView style={styles.root}>
+      <View style={styles.problem}>
+        <Text variant="pageTitle">{blocked ? "You can't use Kinnoc right now" : "We couldn't load your account"}</Text>
+        {inactive ? (
+          <Text variant="post" color="textSecondary">
+            {inactive === 'suspended' ? 'This account is suspended.' : 'This account has been deactivated.'} If you think this is a mistake, contact Kinnoc
+            support.
+          </Text>
+        ) : (
+          <ErrorState error={account.error} onRetry={blocked ? undefined : () => account.refetch()} style={styles.error} />
+        )}
+        <Button label="Sign out" variant="quiet" onPress={() => void signOut()} />
+      </View>
+    </SafeAreaView>
+  );
 }
 
 /** After this long, loading explains itself and offers a way out instead of spinning silently. */
@@ -55,9 +68,9 @@ function Connecting({ onSignOut }: { onSignOut: () => void }) {
     const t = setTimeout(() => setSlow(true), SLOW_MS);
     return () => clearTimeout(t);
   }, []);
+  // The splash continues while the account is checked, so start-up is one screen, not two.
   return (
-    <SafeAreaView style={styles.root}>
-      <CenteredSpinner />
+    <BrandSplash>
       {slow ? (
         <View style={styles.slow} accessibilityLiveRegion="polite">
           <Text variant="post" color="textSecondary" style={styles.slowText}>
@@ -66,14 +79,14 @@ function Connecting({ onSignOut }: { onSignOut: () => void }) {
           <Button label="Sign out" variant="text" onPress={onSignOut} />
         </View>
       ) : null}
-    </SafeAreaView>
+    </BrandSplash>
   );
 }
 
 /** Onboarding: the API keeps usernames on the profile, not in sign-up metadata. */
 function CreateProfile({ onCreated }: { onCreated: () => void }) {
   const { session, signOut } = useAuth();
-  const create = useCreateProfile();
+  const create = useCreateProfile(session?.user.id ?? null);
   const [values, setValues] = useState({
     displayName: session?.user.displayName ?? '',
     username: session?.user.username ?? '',

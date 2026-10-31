@@ -197,7 +197,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       async load() {
         await delay(150);
         const p = me();
-        return { id: p.id, email: null, profile: { username: p.username, displayName: p.displayName } };
+        return { id: p.id, email: null, profile: { username: p.username, displayName: p.displayName }, status: 'active' as const };
       },
       async createProfile() {
         return api.account.load();
