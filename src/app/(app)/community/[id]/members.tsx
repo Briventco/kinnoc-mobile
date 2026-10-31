@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { Crown, ShieldCheck, ShieldOff, UserMinus } from 'lucide-react-native';
+import { Crown, Ellipsis, ShieldCheck, ShieldOff, UserMinus } from 'lucide-react-native';
 import { useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,12 +9,13 @@ import type { CommunityMember, CommunityRole } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
 import { ScreenHeader } from '@/components/Header';
 import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
-import { Pressable } from '@/components/Pressable';
+import { IconButton } from '@/components/IconButton';
 import { ErrorState, Hairline, ListFooter, SkeletonList } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { useCommunity, useCommunityAdmin, useMembers } from '@/features/communities/hooks';
 import { useMe } from '@/features/profile/hooks';
+import { ProfileLink } from '@/features/profile/ProfileLink';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flatten } from '@/lib/cache';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
@@ -83,28 +84,27 @@ export default function Members() {
             const role = ROLE_LABEL[item.role];
             const isMe = item.username === me.data?.username;
             return (
-              <Pressable
-                style={styles.row}
-                onPress={actions.length ? () => setMenuFor(item) : undefined}
-                disabled={!actions.length}
-                accessibilityRole={actions.length ? 'button' : undefined}
-                accessibilityLabel={[item.displayName, isMe ? 'you' : null, role].filter(Boolean).join(', ')}
-                accessibilityHint={actions.length ? 'Opens member actions' : undefined}
-                pressedOpacity={0.7}
-              >
-                <Avatar name={item.displayName} uri={item.avatarUrl} size={44} />
-                <View style={styles.body}>
-                  <VerifiedName name={`${item.displayName}${isMe ? ' (you)' : ''}`} username={item.username} variant="rowTitle" />
-                  <Text variant="meta" color="textTertiary" numberOfLines={1}>
-                    @{item.username}
-                  </Text>
-                </View>
+              // The person opens their profile; managing them is the separate "⋯" button, so the two
+              // never collide and screen readers reach both.
+              <View style={styles.row}>
+                <ProfileLink username={item.username} label={[`${item.displayName}'s profile`, isMe ? 'you' : null, role].filter(Boolean).join(', ')} style={styles.person}>
+                  <Avatar name={item.displayName} uri={item.avatarUrl} size={44} />
+                  <View style={styles.body}>
+                    <VerifiedName name={`${item.displayName}${isMe ? ' (you)' : ''}`} username={item.username} variant="rowTitle" />
+                    <Text variant="meta" color="textTertiary" numberOfLines={1}>
+                      @{item.username}
+                    </Text>
+                  </View>
+                </ProfileLink>
                 {role ? (
-                  <Text variant="meta" color={item.role === 'owner' ? 'primary' : 'textSecondary'}>
+                  <Text variant="meta" color={item.role === 'owner' ? 'primary' : 'textSecondary'} style={!actions.length && styles.roleEnd}>
                     {role}
                   </Text>
                 ) : null}
-              </Pressable>
+                {actions.length ? (
+                  <IconButton icon={Ellipsis} label={`Manage ${item.displayName}`} color="textTertiary" size={20} onPress={() => setMenuFor(item)} />
+                ) : null}
+              </View>
             );
           }}
           ItemSeparatorComponent={() => <Hairline inset={gutter + 44 + space[3]} />}
@@ -174,7 +174,10 @@ export default function Members() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingVertical: space[3], minHeight: 64 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[3], minHeight: 64 },
+  person: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space[3] },
   body: { flex: 1, minWidth: 0, gap: 2 },
+  // Lines up with the gutter when there is no "⋯" button after it.
+  roleEnd: { marginRight: 10 },
   empty: { padding: space[6] },
 });

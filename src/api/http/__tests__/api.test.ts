@@ -313,6 +313,48 @@ describe('createHttpApi', () => {
     });
   });
 
+  describe('public profiles', () => {
+    const me = { id: 'u1', email: 'a@b.c', profile: { username: 'ada', displayName: 'Ada', bio: null, avatarKey: null, avatarUrl: null }, interests: [] };
+    const answer = (method: string, path: string) => {
+      if (path === '/users/provision') return me;
+      if (path === '/users/me') return me;
+      if (path === '/users/me/inbox') return [];
+      if (path === '/users/me/communities') return page([apiCommunity()]);
+      if (path === '/profiles/caleb') return { username: 'caleb', displayName: 'Caleb', bio: 'Hi', avatarUrl: null, interests: null };
+      if (path === '/profiles/caleb/communities') return page([apiCommunity({ name: 'Open Garden' })]);
+      throw new ApiError('not_found', 'Not found', 404, {}, path.startsWith('/profiles/gone') ? 'PROFILE_NOT_FOUND' : 'NOT_FOUND');
+    };
+
+    it('loads anyone by username, and your own username as your own profile', async () => {
+      const { client, calls } = fakeClient(answer);
+      const api = createHttpApi(client, options);
+      await api.account.load();
+      expect(await api.profile.get('caleb')).toMatchObject({ username: 'caleb', bio: 'Hi', isMe: false });
+      expect(await api.profile.get('ADA')).toMatchObject({ username: 'ada', isMe: true });
+      expect(calls.map((c) => c[1])).toContain('/profiles/caleb');
+      expect(calls.map((c) => c[1])).not.toContain('/profiles/ADA');
+    });
+
+    it("lists someone's public communities, and yours from your own memberships", async () => {
+      const { client, calls } = fakeClient(answer);
+      const api = createHttpApi(client, options);
+      await api.account.load();
+      expect((await api.communities.ofUser('caleb')).map((c) => c.name)).toEqual(['Open Garden']);
+      expect(calls.at(-1)).toEqual(['GET', '/profiles/caleb/communities', { query: { limit: 50 } }]);
+      await api.communities.ofUser('ada');
+      expect(calls.at(-1)?.[1]).toBe('/users/me/communities');
+    });
+
+    it('says their communities are unavailable on an API without the route, and passes on a hidden profile', async () => {
+      const { client } = fakeClient(answer);
+      const api = createHttpApi(client, options);
+      await api.account.load();
+      await expect(api.communities.ofUser('someone')).rejects.toMatchObject({ code: 'unsupported' });
+      await expect(api.communities.ofUser('gone')).rejects.toMatchObject({ serverCode: 'PROFILE_NOT_FOUND' });
+      await expect(api.profile.get('gone')).rejects.toMatchObject({ serverCode: 'PROFILE_NOT_FOUND' });
+    });
+  });
+
   describe('profile photos', () => {
     const account = (avatarKey: string | null) => ({
       id: 'u1',

@@ -1,31 +1,17 @@
 import { BadgeCheck } from 'lucide-react-native';
+import { useState } from 'react';
 import { StyleSheet, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
-import type { Verification, VerificationCategory } from '@/api/types';
+import type { Verification } from '@/api/types';
+import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { colors, type ColorName, type TypeVariant } from '@/theme';
 
 import { useVerification } from './hooks';
+import { verificationLabel } from './labels';
+import { VerificationSheet } from './VerificationSheet';
 
-export const CATEGORY_LABEL: Record<VerificationCategory, string> = {
-  founder: 'Founder',
-  'student-leader': 'Student leader',
-  'community-leader': 'Community leader',
-  'organisation-representative': 'Organisation representative',
-  other: 'Verified',
-};
-
-/** "Founder, Brivent Global Innovations": why the tick was given, or null without details. */
-export function verificationDetail(v: Verification) {
-  return [v.position, v.organisation].filter(Boolean).join(', ') || null;
-}
-
-/** What a screen reader says for the tick: "Verified founder, Founder, Brivent Global Innovations". */
-export function verificationLabel(v: Verification) {
-  const kind = v.category && v.category !== 'other' ? `Verified ${CATEGORY_LABEL[v.category].toLowerCase()}` : 'Verified';
-  const detail = verificationDetail(v);
-  return detail ? `${kind}, ${detail}` : kind;
-}
+export { CATEGORY_LABEL, verificationDetail, verificationLabel } from './labels';
 
 /** Badge size for each name style it sits beside. */
 const SIZE: Partial<Record<TypeVariant, number>> = { pageTitle: 20, display: 22, rowTitle: 16, name: 15, meta: 13 };
@@ -58,15 +44,22 @@ interface VerifiedNameProps {
   style?: StyleProp<TextStyle>;
   /** Layout of the name and badge row, e.g. to let it shrink in a header. */
   containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * The tick opens a sheet saying why they are verified. For profile headers only: in a row the
+   * name is already a link to the profile, and a button inside a link is unreachable.
+   */
+  explainable?: boolean;
 }
 
 /**
  * A display name with its blue tick after it. The name shrinks and truncates first, so the tick
  * stays visible on narrow screens.
  */
-export function VerifiedName({ name, username, variant = 'name', color, numberOfLines = 1, style, containerStyle }: VerifiedNameProps) {
+export function VerifiedName({ name, username, variant = 'name', color, numberOfLines = 1, style, containerStyle, explainable }: VerifiedNameProps) {
   const { data } = useVerification(username);
   const verified = !!data?.isVerified;
+  const [explaining, setExplaining] = useState(false);
+  const size = SIZE[variant] ?? 15;
   return (
     <View style={[styles.row, containerStyle]}>
       <Text
@@ -78,7 +71,20 @@ export function VerifiedName({ name, username, variant = 'name', color, numberOf
       >
         {name}
       </Text>
-      {verified ? <Tick verification={data} size={SIZE[variant] ?? 15} style={styles.tick} /> : null}
+      {verified && explainable ? (
+        <Pressable
+          onPress={() => setExplaining(true)}
+          style={styles.tick}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={`${verificationLabel(data)}. Why ${name} is verified`}
+        >
+          <BadgeCheck size={size} color={colors.onPrimary} fill={colors.primary} strokeWidth={2} />
+        </Pressable>
+      ) : verified ? (
+        <Tick verification={data} size={size} style={styles.tick} />
+      ) : null}
+      {explainable ? <VerificationSheet verification={explaining && data ? data : null} name={name} onClose={() => setExplaining(false)} /> : null}
     </View>
   );
 }

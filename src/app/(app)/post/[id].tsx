@@ -19,6 +19,7 @@ import { COMMENT_MAX_LENGTH, createIdempotencyKey } from '@/features/feed/drafts
 import { useAddComment, useComments, useDeleteComment, useEditComment, usePost, useReplies } from '@/features/feed/hooks';
 import { PostRow } from '@/features/feed/PostRow';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
+import { ProfileLink } from '@/features/profile/ProfileLink';
 import { flattenUnique } from '@/lib/cache';
 import { formatAge, plural } from '@/lib/format';
 import { KEYBOARD_BEHAVIOR, useBottomBarInset } from '@/lib/useKeyboardVisible';
@@ -40,15 +41,18 @@ function CommentRow({ comment, actions, reply }: { comment: Comment; actions: Co
   const hasMenu = !deleted && (comment.isMine || actions.canDelete(comment));
   return (
     <View style={[styles.comment, reply && styles.reply]}>
-      <Avatar name={comment.author?.displayName ?? ''} uri={comment.author?.avatarUrl} size={reply ? 24 : 32} />
+      <ProfileLink username={deleted ? null : comment.author?.username} label={`${comment.author?.displayName ?? 'Their'}'s profile`}>
+        <Avatar name={comment.author?.displayName ?? ''} uri={comment.author?.avatarUrl} size={reply ? 24 : 32} />
+      </ProfileLink>
       <View style={styles.flex}>
         <View style={styles.commentHead}>
-          <VerifiedName
-            name={deleted ? 'Deleted' : (comment.author?.displayName ?? 'Former member')}
-            username={deleted ? null : comment.author?.username}
-            style={styles.commentName}
-            containerStyle={styles.shrink}
-          />
+          <ProfileLink username={deleted ? null : comment.author?.username} label={`${comment.author?.displayName ?? 'Their'}'s profile`} style={styles.shrink}>
+            <VerifiedName
+              name={deleted ? 'Deleted' : (comment.author?.displayName ?? 'Former member')}
+              username={deleted ? null : comment.author?.username}
+              style={styles.commentName}
+            />
+          </ProfileLink>
           <Text variant="meta" color="textTertiary">
             {' '}
             · {formatAge(comment.createdAt)}

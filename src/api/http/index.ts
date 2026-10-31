@@ -15,6 +15,7 @@ import {
   type ApiMessagePage,
   type ApiOwnVerification,
   type ApiPost,
+  type ApiPublicProfile,
   type ApiVerification,
   mapPage,
   NOT_VERIFIED,
@@ -35,6 +36,7 @@ import {
   toOwnProfile,
   toOwnVerification,
   toPost,
+  toPublicProfile,
   toVerification,
 } from './mappers';
 
@@ -69,6 +71,9 @@ const FEED_SCOPE = { 'for-you': 'public', communities: 'communities' } as const;
 export function createHttpApi(client: HttpClient, options: HttpApiOptions): KinnocApi {
   /** The signed-in account's ID, learned from `/users/me`, to answer "is this me?". */
   let myId: string | null = null;
+  /** The signed-in account's username, to send "your own profile" to the right routes. */
+  let myUsername: string | null = null;
+  const isMine = (username: string) => !!myUsername && username.toLowerCase() === myUsername.toLowerCase();
 
   const getCommunity = async (ref: string) => toCommunity(await client.get<ApiCommunity>(`/communities/${enc(ref)}`));
   const myCommunities = async (status: 'ACTIVE' | 'REQUESTED' | 'INVITED', cursor: string | null, limit?: number) =>
@@ -77,6 +82,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
   const loadMe = async () => {
     const [account, inbox] = await Promise.all([client.get<ApiAccount>('/users/me'), client.get<ApiInboxEntry[]>('/users/me/inbox')]);
     myId = account.id;
+    myUsername = account.profile?.username ?? null;
     // The inbox lists every community the caller is an active member of.
     return toOwnProfile(account, inbox.length);
   };
@@ -103,6 +109,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       load: async () => {
         const account = await client.post<ApiAccount>('/users/provision');
         myId = account.id;
+        myUsername = account.profile?.username ?? null;
         return toAccount(account);
       },
       createProfile: async ({ username, displayName }) => {
@@ -195,10 +202,16 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       setMuted: notAvailable('Muting conversations'),
       setPinned: notAvailable('Pinning conversations'),
       markRead: (id, lastMessageId) => client.post(`/communities/${enc(id)}/read`, { body: lastMessageId ? { lastMessageId } : {} }),
-      ofUser: async (userId) => {
-        // Other people's memberships are not exposed by the API yet.
-        if (myId && userId !== myId) throw unsupported("Other people's communities");
-        return (await myCommunities('ACTIVE', null, 50)).items;
+      ofUser: async (username) => {
+        if (isMine(username)) return (await myCommunities('ACTIVE', null, 50)).items;
+        try {
+          // Only their PUBLIC communities, each with your own membership, never theirs.
+          return mapPage(await client.get<Page<ApiCommunity>>(`/profiles/${enc(username)}/communities`, { query: { limit: 50 } }), toCommunity).items;
+        } catch (error) {
+          // An API deployed without this route answers the generic NOT_FOUND.
+          if (isApiError(error, 'NOT_FOUND')) throw unsupported('Their communities');
+          throw error;
+        }
       },
     },
     messages: {
@@ -247,10 +260,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
     },
     profile: {
       me: loadMe,
-      get: async (userId) => {
-        if (myId && userId !== myId) throw unsupported("Other people's profiles");
-        return loadMe();
-      },
+      get: async (username) => (isMine(username) ? loadMe() : toPublicProfile(await client.get<ApiPublicProfile>(`/profiles/${enc(username)}`))),
       update: async ({ displayName, bio }) => {
         await client.patch('/profiles/me', { body: { displayName, bio: bio ?? null } });
         return loadMe();
