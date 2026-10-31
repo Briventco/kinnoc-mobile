@@ -22,6 +22,7 @@ import { api, realtime } from '@/services';
 import { withLiveMessage } from './inboxCache';
 import { markDeleted, maxSeq, mergeMessages, patchMessage, type MessagePages } from './messageCache';
 import { mergeReceipts } from './receipts';
+import { DEFAULT_COMMUNITY_CATEGORIES } from './categories';
 
 /**
  * The inbox is live for the communities it lists (`useInboxLive`); polling picks up new
@@ -57,7 +58,18 @@ export function useBrowseCommunities(filter: CommunityBrowseFilter) {
 }
 
 export function useCategories() {
-  return useQuery({ queryKey: keys.categories, queryFn: () => api.communities.categories(), staleTime: 60 * 60_000 });
+  return useQuery({
+    queryKey: keys.categories,
+    queryFn: async () => {
+      try {
+        const items = await api.communities.categories();
+        return items.length > 0 ? items : DEFAULT_COMMUNITY_CATEGORIES;
+      } catch {
+        return DEFAULT_COMMUNITY_CATEGORIES;
+      }
+    },
+    staleTime: 60 * 60_000,
+  });
 }
 
 export function useCommunity(id: string, enabled = true) {

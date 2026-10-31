@@ -12,7 +12,7 @@ import { Chip } from '@/components/Chip';
 import { TextField } from '@/components/Field';
 import { IconButton } from '@/components/IconButton';
 import { Pressable } from '@/components/Pressable';
-import { Banner, ErrorState } from '@/components/States';
+import { Banner, ErrorState, SkeletonBlock } from '@/components/States';
 import { Text } from '@/components/Text';
 import { pickImages } from '@/lib/media';
 import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
@@ -194,7 +194,13 @@ export function CommunityForm({ title, submitLabel, initial, initialImages, subm
           <Text variant="label" color="textTertiary">
             Category
           </Text>
-          {categories.isError ? (
+          {categories.isPending ? (
+            <View style={styles.wrap} accessible accessibilityLabel="Loading categories" accessibilityRole="progressbar">
+              {[96, 80, 120, 88, 104, 72].map((w) => (
+                <SkeletonBlock key={w} style={{ width: w, height: 36, borderRadius: radius.full }} />
+              ))}
+            </View>
+          ) : categories.isError && (!categories.data || categories.data.length === 0) ? (
             <ErrorState error={categories.error} onRetry={() => categories.refetch()} style={styles.inline} />
           ) : (
             <View style={styles.wrap} accessibilityRole="radiogroup" accessibilityLabel="Category">
