@@ -21,10 +21,20 @@ import { colors, fontAssets, gutter, space } from '@/theme';
 
 void SplashScreen.preventAutoHideAsync();
 
+/** The longest start-up waits for fonts before showing the app anyway. */
+const FONT_WAIT_MS = 4000;
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
+  // Fonts are bundled on iOS and Android, but downloaded on the web. On a slow connection the app
+  // opens after FONT_WAIT_MS with the system font, and switches to Kinnoc's when they arrive.
+  const [fontWaitOver, setFontWaitOver] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setFontWaitOver(true), FONT_WAIT_MS);
+    return () => clearTimeout(t);
+  }, []);
   // If fonts fail to load the app continues with the system font rather than blocking.
-  const fontsReady = fontsLoaded || !!fontError;
+  const fontsReady = fontsLoaded || !!fontError || fontWaitOver;
 
   return (
     <SafeAreaProvider>
