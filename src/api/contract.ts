@@ -118,7 +118,8 @@ export interface KinnocApi {
     /** Marks the conversation read up to `lastMessageId`, or up to the latest message when null. */
     markRead(communityId: ID, lastMessageId: ID | null): Promise<void>;
     /** Communities the given user belongs to (public memberships only for other people). */
-    ofUser(userId: ID): Promise<CommunitySummary[]>;
+    /** The public communities someone belongs to, by username; for you, all of yours. */
+    ofUser(username: string): Promise<CommunitySummary[]>;
   };
   messages: {
     /** Newest first. `cursor` pages back through older history. Members only. */
@@ -143,7 +144,8 @@ export interface KinnocApi {
   };
   profile: {
     me(): Promise<Profile>;
-    get(userId: ID): Promise<Profile>;
+    /** Anyone's profile by username, as you may see it. Your own username gives your own profile. */
+    get(username: string): Promise<Profile>;
     update(changes: ProfileUpdate): Promise<Profile>;
     /** Uploads a picked image as the caller's profile photo, replacing any current one. */
     setAvatar(localUri: string): Promise<Profile>;

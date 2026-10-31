@@ -1,5 +1,5 @@
 import { apiComment, apiCommunity, apiEvent, apiMessage, apiPost } from '../__fixtures__/payloads';
-import { type ApiEvent, type ApiOwnVerification, type ApiVerification, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toAccount, toOwnVerification, toReceipts, toVerification } from '../mappers';
+import { type ApiEvent, type ApiOwnVerification, type ApiVerification, monogramFor, toComment, toCommunity, toCommunityBody, toEvent, toEventPage, toInboxEntry, toMessage, toPost, toAccount, toOwnVerification, toPublicProfile, toReceipts, toVerification } from '../mappers';
 
 describe('toCommunity', () => {
   it('maps visibility, policy and category', () => {
@@ -295,5 +295,23 @@ describe('toAccount', () => {
     expect(toAccount({ ...base, status: 'DEACTIVATED' }).status).toBe('deactivated');
     expect(toAccount({ ...base, status: 'ACTIVE' }).status).toBe('active');
     expect(toAccount(base).status).toBe('active');
+  });
+});
+
+describe('toPublicProfile', () => {
+  it('keeps only public fields, with interests by name and slug', () => {
+    const p = toPublicProfile({
+      username: 'caleb',
+      displayName: 'Caleb Abisoye',
+      bio: 'Building Kinnoc.',
+      avatarUrl: 'https://x/a.jpg',
+      interests: [{ slug: 'startups', name: 'Startups' }],
+    });
+    expect(p).toMatchObject({ id: 'caleb', username: 'caleb', displayName: 'Caleb Abisoye', bio: 'Building Kinnoc.', interests: ['Startups'], interestSlugs: ['startups'], isMe: false });
+    expect(Object.keys(p)).not.toContain('email');
+  });
+
+  it('shows no interests when they keep them private', () => {
+    expect(toPublicProfile({ username: 'ada', displayName: 'Ada', bio: null, avatarUrl: null, interests: null })).toMatchObject({ interests: [], bio: null, avatarUrl: null });
   });
 });

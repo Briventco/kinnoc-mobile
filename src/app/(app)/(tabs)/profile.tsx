@@ -1,11 +1,11 @@
 import { router } from 'expo-router';
 import { Link2, MapPin, Share, SlidersHorizontal } from 'lucide-react-native';
 import { useState } from 'react';
-import { FlatList, RefreshControl, Share as RNShare, ScrollView, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, Share as RNShare, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Post, SavedItem } from '@/api/types';
-import { Avatar, CommunityAvatar } from '@/components/Avatar';
+import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { IconButton } from '@/components/IconButton';
 import { Pressable } from '@/components/Pressable';
@@ -14,6 +14,7 @@ import { Tabs } from '@/components/Tabs';
 import { Text } from '@/components/Text';
 import { PostRow } from '@/features/feed/PostRow';
 import { useMe, useUserCommunities, useUserPosts } from '@/features/profile/hooks';
+import { CommunityStrip, InterestTags } from '@/features/profile/ProfileSections';
 import { useSaved } from '@/features/saved/hooks';
 import { SavedRow, savedKey } from '@/features/saved/SavedRow';
 import { useMyVerification } from '@/features/verification/hooks';
@@ -23,7 +24,7 @@ import { formatCount } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
 import { openExternal } from '@/lib/links';
 import { api } from '@/services';
-import { colors, gutter, radius, space, type } from '@/theme';
+import { colors, gutter, space, type } from '@/theme';
 
 type ProfileTab = 'posts' | 'saved';
 type Row = { kind: 'post'; post: Post } | { kind: 'saved'; item: SavedItem };
@@ -33,7 +34,7 @@ export default function ProfileScreen() {
   const [tab, setTab] = useState<ProfileTab>('posts');
   const posts = useUserPosts(me.data?.id);
   const saved = useSaved();
-  const communities = useUserCommunities(me.data?.id);
+  const communities = useUserCommunities(me.data?.username);
   const pull = usePullToRefresh(() =>
     Promise.all([me.refetch(), posts.refetch(), ...(api.capabilities.social ? [saved.refetch()] : []), communities.refetch()]),
   );
@@ -65,7 +66,7 @@ export default function ProfileScreen() {
       <View style={styles.identity}>
         <Avatar name={p.displayName} uri={p.avatarUrl} size={76} />
         <View style={styles.flex}>
-          <VerifiedName name={p.displayName} username={p.username} variant="pageTitle" style={styles.name} numberOfLines={2} />
+          <VerifiedName name={p.displayName} username={p.username} variant="pageTitle" style={styles.name} numberOfLines={2} explainable />
           <OwnVerificationNote username={p.username} />
           {p.headline ? (
             <Text variant="preview" color="textSecondary">
@@ -119,15 +120,7 @@ export default function ProfileScreen() {
           Interests
         </Text>
         {p.interests.length ? (
-          <View style={styles.tags}>
-            {p.interests.map((i) => (
-              <View key={i} style={styles.tag}>
-                <Text variant="name" style={styles.tagText}>
-                  {i}
-                </Text>
-              </View>
-            ))}
-          </View>
+          <InterestTags interests={p.interests} />
         ) : api.capabilities.profileDetails || api.capabilities.interestCatalogue ? (
           <Button variant="text" label="Add interests" onPress={() => router.push('/settings/edit-profile')} style={styles.alignStart} />
         ) : (
@@ -145,22 +138,7 @@ export default function ProfileScreen() {
           <Button variant="text" subdued label="See all" onPress={() => router.navigate('/communities')} />
         </View>
         {communities.data?.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.strip} style={styles.stripOuter}>
-            {communities.data.map((c) => (
-              <Pressable
-                key={c.id}
-                onPress={() => router.push({ pathname: '/community/[id]', params: { id: c.id } })}
-                style={styles.stripItem}
-                accessibilityRole="button"
-                accessibilityLabel={c.name}
-              >
-                <CommunityAvatar id={c.id} monogram={c.monogram} uri={c.photoUrl} size={56} />
-                <Text variant="meta" numberOfLines={2} style={styles.stripLabel}>
-                  {c.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+          <CommunityStrip communities={communities.data} />
         ) : communities.isPending ? null : (
           <Text variant="preview" color="textTertiary">
             You haven&apos;t joined any communities yet.
@@ -268,13 +246,6 @@ const styles = StyleSheet.create({
   inline: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   block: { paddingHorizontal: gutter, paddingTop: space[5], gap: space[3] },
   statsRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: space[5], rowGap: space[1] },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  tag: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.tag, paddingHorizontal: 12, paddingVertical: 7 },
-  tagText: { fontSize: 14 },
   alignStart: { alignSelf: 'flex-start' },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: -10 },
-  stripOuter: { marginHorizontal: -gutter },
-  strip: { paddingHorizontal: gutter, gap: space[4], paddingBottom: space[5] },
-  stripItem: { width: 72, alignItems: 'center', gap: 6 },
-  stripLabel: { textAlign: 'center' },
 });

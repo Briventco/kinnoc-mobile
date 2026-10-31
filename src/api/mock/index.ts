@@ -593,10 +593,12 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         c.unreadCount = 0;
         c.hasMention = false;
       },
-      async ofUser(userId) {
+      async ofUser(username) {
         await delay();
-        if (userId !== fx.ME_ID) return [];
-        return clone(state.communities.filter((c) => c.membership === 'member').map(summary));
+        const isMe = username === me().username || username === fx.ME_ID;
+        // Sample data has no one else's memberships; others show a few public communities.
+        const list = isMe ? state.communities.filter((c) => c.membership === 'member') : state.communities.filter((c) => c.visibility === 'public').slice(0, 3);
+        return clone(list.map(summary));
       },
     },
 
@@ -709,10 +711,10 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         await delay();
         return clone({ ...me(), communityCount: state.communities.filter((c) => c.membership === 'member').length });
       },
-      async get(userId) {
+      async get(username) {
         await delay();
-        if (userId === fx.ME_ID) return api.profile.me();
-        const u = Object.values(fx.users).find((x) => x.id === userId);
+        if (username === fx.ME_ID || username === me().username) return api.profile.me();
+        const u = Object.values(fx.users).find((x) => x.id === username || x.username.toLowerCase() === username.toLowerCase());
         if (!u) throw new ApiError('not_found', 'Person not found', 404);
         return clone({
           ...u,
@@ -748,7 +750,8 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       },
       async posts(userId, cursor) {
         await delay();
-        return clone(paginate(state.posts.filter((p) => p.author.id === userId).map(withSaved), cursor, 10));
+        // By ID or username, as screens may pass either.
+        return clone(paginate(state.posts.filter((p) => p.author.id === userId || p.author.username === userId).map(withSaved), cursor, 10));
       },
       async setInterests(slugs) {
         await delay(400);

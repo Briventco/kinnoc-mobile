@@ -16,6 +16,7 @@ import { useToast } from '@/components/Toast';
 import { validateUsername } from '@/features/auth/validation';
 import { useCommunity, useCommunityAdmin, useInvitations, useJoinRequests } from '@/features/communities/hooks';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
+import { ProfileLink } from '@/features/profile/ProfileLink';
 import { flatten } from '@/lib/cache';
 import { formatInboxTime } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
@@ -50,9 +51,13 @@ export default function ManageCommunity() {
 function PersonRow({ person, detail, children }: { person: Person; detail: string; children: React.ReactNode }) {
   return (
     <View style={styles.row} accessible={false}>
-      <Avatar name={person.displayName} uri={person.avatarUrl} size={44} />
+      <ProfileLink username={person.username} label={`${person.displayName}'s profile`}>
+        <Avatar name={person.displayName} uri={person.avatarUrl} size={44} />
+      </ProfileLink>
       <View style={styles.body}>
-        <VerifiedName name={person.displayName} username={person.username} variant="rowTitle" />
+        <ProfileLink username={person.username} label={`${person.displayName}'s profile`} style={styles.nameLink}>
+          <VerifiedName name={person.displayName} username={person.username} variant="rowTitle" />
+        </ProfileLink>
         <Text variant="meta" color="textTertiary" numberOfLines={1}>
           @{person.username} · {detail}
         </Text>
@@ -201,6 +206,7 @@ function Invitations({ id }: { id: string }) {
 }
 
 const styles = StyleSheet.create({
+  nameLink: { alignSelf: 'flex-start', maxWidth: '100%' },
   root: { flex: 1, backgroundColor: colors.surface },
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: gutter, paddingVertical: space[3], minHeight: 64 },
   body: { flex: 1, minWidth: 0, gap: 2 },

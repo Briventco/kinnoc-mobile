@@ -14,6 +14,7 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { useToggleSave } from '@/features/saved/hooks';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
+import { ProfileLink } from '@/features/profile/ProfileLink';
 import { formatAge, plural } from '@/lib/format';
 import { openExternal } from '@/lib/links';
 import { api } from '@/services';
@@ -68,9 +69,14 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
   return (
     <View style={styles.row}>
       <View style={styles.header}>
-        <Avatar name={post.author.displayName} uri={post.author.avatarUrl} size={40} />
+        <ProfileLink username={post.author.username} label={`${post.author.displayName}'s profile`}>
+          <Avatar name={post.author.displayName} uri={post.author.avatarUrl} size={40} />
+        </ProfileLink>
         <View style={styles.flex}>
-          <VerifiedName name={post.author.displayName} username={post.author.username} />
+          {/* Only the name is the link; the community name and time beside it stay their own. */}
+          <ProfileLink username={post.author.username} label={`${post.author.displayName}'s profile`} style={styles.nameLink}>
+            <VerifiedName name={post.author.displayName} username={post.author.username} />
+          </ProfileLink>
           <Text variant="meta" color="textTertiary" numberOfLines={1}>
             {post.community ? (
               <Text
@@ -245,6 +251,7 @@ const styles = StyleSheet.create({
   row: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[2], gap: space[3], backgroundColor: colors.surface },
   header: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginRight: -10 },
   flex: { flex: 1, minWidth: 0 },
+  nameLink: { alignSelf: 'flex-start', maxWidth: '100%' },
   seeMore: { marginTop: -space[2], alignSelf: 'flex-start' },
   media: { width: '100%', borderRadius: radius.md, backgroundColor: colors.surface3 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, borderRadius: radius.md, overflow: 'hidden' },

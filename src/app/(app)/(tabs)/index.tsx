@@ -1,8 +1,8 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { ArrowDown, Bell, ImageIcon, RotateCw, Search } from 'lucide-react-native';
+import { Bell, ImageIcon, RotateCw, Search } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Animated, FlatList, Platform, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Platform, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { describeError } from '@/api/errors';
@@ -10,6 +10,7 @@ import type { FeedItem, FeedScope } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
 import { IconButton, NewDot } from '@/components/IconButton';
 import { Pressable } from '@/components/Pressable';
+import { PullIndicator } from '@/components/PullIndicator';
 import { EmptyState, ErrorState, Hairline, ListFooter, SkeletonList } from '@/components/States';
 import { Tabs } from '@/components/Tabs';
 import { Text } from '@/components/Text';
@@ -22,9 +23,9 @@ import { StoryRow } from '@/features/stories/StoryRow';
 import { useUnreadNotificationCount } from '@/features/notifications/hooks';
 import { useMe } from '@/features/profile/hooks';
 import { flattenUnique } from '@/lib/cache';
-import { PULL_MAX, PULL_TRIGGER, useWebPullToRefresh } from '@/lib/useWebPullToRefresh';
+import { useWebPullToRefresh } from '@/lib/useWebPullToRefresh';
 import { api } from '@/services';
-import { colors, gutter, shadow, size, space } from '@/theme';
+import { colors, gutter, size, space } from '@/theme';
 
 // Following people is not offered by every backend; without it there is no Following feed.
 const SCOPES: { key: FeedScope; label: string }[] = [
@@ -215,36 +216,11 @@ function FeedList({ scope, onRefresh, listRef }: { scope: FeedScope; onRefresh: 
   );
 }
 
-/**
- * The web's pull indicator: an arrow that follows the finger and turns once the pull is far
- * enough, then a small spinner while the feed refreshes (from a pull or the header button).
- */
-function PullIndicator({ pull, refreshing }: { pull: Animated.Value; refreshing: boolean }) {
-  const progress = pull.interpolate({ inputRange: [0, PULL_TRIGGER], outputRange: [0, 1], extrapolate: 'clamp' });
-  const translateY = pull.interpolate({ inputRange: [0, PULL_MAX], outputRange: [-44, PULL_MAX / 2], extrapolate: 'clamp' });
-  const rotate = progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
-  return (
-    <View pointerEvents="none" style={styles.pullWrap}>
-      {refreshing ? (
-        <View style={styles.pullBubble}>
-          <ActivityIndicator size="small" color={colors.primary} />
-        </View>
-      ) : (
-        <Animated.View style={[styles.pullBubble, { opacity: progress, transform: [{ translateY }, { rotate }] }]}>
-          <ArrowDown size={18} color={colors.primary} strokeWidth={2} />
-        </Animated.View>
-      )}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   flex: { flex: 1 },
   hidden: { display: 'none' },
   headerSpinner: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  pullWrap: { position: 'absolute', top: space[2], left: 0, right: 0, alignItems: 'center' },
-  pullBubble: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', ...shadow.float },
   fill: { flexGrow: 1 },
   // Centred in the space under the composer, nudged above the middle so it reads as balanced.
   empty: { flex: 1, justifyContent: 'center', paddingTop: space[6], paddingBottom: space[8] * 2 },

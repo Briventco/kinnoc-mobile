@@ -19,11 +19,21 @@ export function useUserPosts(userId: string | undefined) {
   });
 }
 
-export function useUserCommunities(userId: string | undefined) {
+/** The public communities someone belongs to (all of yours, for you), by username. */
+export function useUserCommunities(username: string | undefined) {
   return useQuery({
-    queryKey: keys.userCommunities(userId ?? ''),
-    queryFn: () => api.communities.ofUser(userId!),
-    enabled: !!userId,
+    queryKey: keys.userCommunities(username?.toLowerCase() ?? ''),
+    queryFn: () => api.communities.ofUser(username!),
+    enabled: !!username,
+  });
+}
+
+/** Anyone's profile by username, as you may see it. */
+export function useProfile(username: string | undefined) {
+  return useQuery({
+    queryKey: keys.profile(username?.toLowerCase() ?? ''),
+    queryFn: () => api.profile.get(username!),
+    enabled: !!username,
   });
 }
 

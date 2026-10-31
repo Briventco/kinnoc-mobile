@@ -9,6 +9,7 @@ import { Emoji } from '@/components/Emoji';
 import { Pressable } from '@/components/Pressable';
 import { Text } from '@/components/Text';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
+import { ProfileLink } from '@/features/profile/ProfileLink';
 import { formatTime } from '@/lib/format';
 import { openExternal } from '@/lib/links';
 import { colors, gutter, radius, space } from '@/theme';
@@ -120,12 +121,18 @@ export const MessageBubble = memo(function MessageBubble({ message, status, show
       ) : (
         <View style={styles.theirsRow}>
           <View style={styles.avatarCol}>
-            {showHeader ? <Avatar name={senderName} uri={message.sender?.avatarUrl} size={32} /> : null}
+            {showHeader ? (
+              <ProfileLink username={message.sender?.username} label={`${senderName}'s profile`}>
+                <Avatar name={senderName} uri={message.sender?.avatarUrl} size={32} />
+              </ProfileLink>
+            ) : null}
           </View>
           <View style={styles.theirsCol}>
             {showHeader ? (
               <View style={[styles.senderLine, styles.senderRow]}>
-                <VerifiedName name={senderName} username={message.sender?.username} style={styles.senderName} containerStyle={styles.shrink} />
+                <ProfileLink username={message.sender?.username} label={`${senderName}'s profile`} style={styles.shrink}>
+                  <VerifiedName name={senderName} username={message.sender?.username} style={styles.senderName} />
+                </ProfileLink>
                 <Text variant="meta" color="textTertiary">
                   {' '}
                   {formatTime(message.sentAt)}

@@ -333,6 +333,40 @@ export const toAccount = (a: ApiAccount): Account => ({
   status: a.status && a.status in ACCOUNT_STATUS ? ACCOUNT_STATUS[a.status] : 'active',
 });
 
+/**
+ * `GET /profiles/:username`: another person's profile as the caller may see it. The API never
+ * returns their email, role, status or user ID. `interests` is null when they keep it private.
+ */
+export interface ApiPublicProfile {
+  username: string;
+  displayName: string;
+  bio: string | null;
+  avatarUrl: string | null;
+  interests: { slug: string; name: string }[] | null;
+}
+
+export function toPublicProfile(p: ApiPublicProfile): Profile {
+  const interests = Array.isArray(p.interests) ? p.interests : [];
+  return {
+    // The API exposes no user IDs; the username identifies people in the app.
+    id: p.username,
+    username: p.username,
+    displayName: p.displayName,
+    avatarUrl: p.avatarUrl ?? null,
+    bio: p.bio ?? null,
+    headline: null,
+    location: null,
+    website: null,
+    interests: interests.map((i) => i.name),
+    interestSlugs: interests.map((i) => i.slug),
+    followerCount: 0,
+    followingCount: 0,
+    communityCount: 0,
+    isMe: false,
+    isFollowing: false,
+  };
+}
+
 /** The signed-in person's profile. Follows, headline, location and website are not in the API yet. */
 export function toOwnProfile(a: ApiAccount, communityCount: number): Profile {
   return {
