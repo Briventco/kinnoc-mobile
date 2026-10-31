@@ -15,7 +15,8 @@ import { useToast } from '@/components/Toast';
 import { useToggleSave } from '@/features/saved/hooks';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { ProfileLink } from '@/features/profile/ProfileLink';
-import { formatAge, plural } from '@/lib/format';
+import { plural } from '@/lib/format';
+import { useRelativeTime } from '@/lib/useRelativeTime';
 import { openExternal } from '@/lib/links';
 import { api } from '@/services';
 import { colors, gutter, radius, space } from '@/theme';
@@ -37,6 +38,7 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
   const save = useToggleSave();
   const remove = useDeletePost();
   const toast = useToast();
+  const formattedAge = useRelativeTime(post.createdAt);
   const [expanded, setExpanded] = useState(detail ?? false);
   // Long posts collapse to six lines; a length threshold behaves the same on iOS and Android.
   const truncated = post.text.length > LONG_POST;
@@ -89,7 +91,7 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
               </Text>
             ) : null}
             {post.community ? ' · ' : ''}
-            {formatAge(post.createdAt)}
+            {formattedAge}
             {post.editedAt ? ' · Edited' : ''}
           </Text>
         </View>

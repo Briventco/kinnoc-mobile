@@ -79,10 +79,20 @@ export function CommunityForm({ title, submitLabel, initial, initialImages, subm
   const [avatar, setAvatar] = useState<ImageState>({ previewUrl: initialImages?.avatarUrl ?? null, key: undefined, uploading: false });
   const [cover, setCover] = useState<ImageState>({ previewUrl: initialImages?.coverUrl ?? null, key: undefined, uploading: false });
 
-  const set = <K extends keyof CommunityFormValues>(key: K, value: CommunityFormValues[K]) => setValues((v) => ({ ...v, [key]: value }));
+  const set = <K extends keyof CommunityFormValues>(key: K, value: CommunityFormValues[K]) => {
+    setValues((v) => ({ ...v, [key]: value }));
+    setErrors((prev) => (prev[key as keyof typeof errors] ? { ...prev, [key]: null } : prev));
+    setFormError(null);
+  };
   const setVisibility = (visibility: CommunityVisibility) =>
     // Private communities can only grow by invitation.
     setValues((v) => ({ ...v, visibility, joinPolicy: visibility === 'private' ? 'invite-only' : v.joinPolicy }));
+
+  const selectCategory = (slug: string) => {
+    set('category', slug);
+    setErrors((prev) => (prev.category ? { ...prev, category: null } : prev));
+    setFormError(null);
+  };
 
   const pick = (which: 'avatar' | 'cover') => {
     const setImage = which === 'avatar' ? setAvatar : setCover;
@@ -205,7 +215,7 @@ export function CommunityForm({ title, submitLabel, initial, initialImages, subm
           ) : (
             <View style={styles.wrap} accessibilityRole="radiogroup" accessibilityLabel="Category">
               {(categories.data ?? []).map((c) => (
-                <Chip key={c.slug} label={c.name} role="radio" selected={values.category === c.slug} onPress={() => set('category', c.slug)} />
+                <Chip key={c.slug} label={c.name} role="radio" selected={values.category === c.slug} onPress={() => selectCategory(c.slug)} />
               ))}
             </View>
           )}
