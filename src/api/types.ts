@@ -438,7 +438,10 @@ export type NotificationKind =
   | 'reaction'
   | 'community'
   | 'event-reminder'
-  | 'deadline';
+  | 'deadline'
+  | 'verification'
+  | 'message'
+  | 'system';
 
 export interface AppNotification {
   id: ID;
@@ -463,6 +466,29 @@ export interface NotificationPreferences {
   likes: boolean;
   communityActivity: boolean;
   reminders: boolean;
+
+  directMessages?: boolean;
+  verifications?: boolean;
+  system?: boolean;
+
+  pushEnabled?: boolean;
+  pushDirectMessages?: boolean;
+  pushLikes?: boolean;
+  pushComments?: boolean;
+  pushMentions?: boolean;
+  pushInvitations?: boolean;
+  pushAnnouncements?: boolean;
+  pushVerifications?: boolean;
+  pushSystem?: boolean;
+}
+
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
 }
 
 /** One frame of a story: a photo, or short text on a brand colour. Stories expire after 24 hours. */
@@ -513,6 +539,8 @@ export interface ApiCapabilities {
   feed: boolean;
   /** Following people (and the Following feed), notifications, stories and saved items. */
   social: boolean;
+  /** Backend notifications and notification settings. */
+  notifications?: boolean;
   /** What Discover can list. Kinds left out get no tab. */
   discoverKinds: DiscoverItem['kind'][];
   /** Emoji reactions on messages. */

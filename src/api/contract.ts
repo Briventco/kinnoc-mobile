@@ -33,6 +33,7 @@ import type {
   PostUpdate,
   Profile,
   ProfileUpdate,
+  PushSubscriptionPayload,
   Reaction,
   StoryReel,
   CreateStoryInput,
@@ -166,8 +167,12 @@ export interface KinnocApi {
     unreadCount(): Promise<number>;
     markRead(notificationId: ID): Promise<void>;
     markAllRead(): Promise<void>;
+    delete(notificationId: ID): Promise<void>;
     preferences(): Promise<NotificationPreferences>;
     updatePreferences(prefs: NotificationPreferences): Promise<NotificationPreferences>;
+    vapidPublicKey(): Promise<string>;
+    subscribePush(sub: PushSubscriptionPayload): Promise<void>;
+    unsubscribePush(endpoint: string): Promise<void>;
   };
   stories: {
     /** The viewer's own reel first (possibly with no frames), then unseen reels, then seen ones. */

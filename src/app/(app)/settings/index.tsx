@@ -34,7 +34,7 @@ export default function Settings() {
           {api.capabilities.social ? <SettingRow icon={Bookmark} label="Saved" onPress={() => router.push('/saved')} /> : null}
           {session ? <SettingRow label="Email" detail={session.user.email} /> : null}
         </SettingSection>
-        {api.capabilities.social ? (
+        {(api.capabilities.notifications ?? api.capabilities.social) ? (
           <SettingSection title="Notifications">
             <SettingRow icon={Bell} label="Notification settings" onPress={() => router.push('/settings/notifications')} />
           </SettingSection>

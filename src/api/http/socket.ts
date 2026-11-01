@@ -59,6 +59,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
   let appStateSub: { remove(): void } | null = null;
 
   const listeners = new Map<string, Set<Listener>>();
+  const notificationListeners = new Set<(event: { type: 'new' | 'read'; unreadCount: number }) => void>();
   const statusListeners = new Set<(s: RealtimeStatus) => void>();
   /** communityId → username → who is typing and when it lapses. */
   const typing = new Map<string, Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>>();
@@ -262,6 +263,12 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
       forgetDelivered(communityId);
       emitTo(communityId, { type: 'ended' });
     });
+    s.on('notification:new', (data: { unreadCount: number }) => {
+      notificationListeners.forEach((fn) => fn({ type: 'new', unreadCount: data.unreadCount }));
+    });
+    s.on('notification:read', (data: { unreadCount: number }) => {
+      notificationListeners.forEach((fn) => fn({ type: 'read', unreadCount: data.unreadCount }));
+    });
 
     appStateSub = appState?.addEventListener('change', (state) => {
       const isForeground = state === 'active';
@@ -271,7 +278,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
         clearTimers();
         s.disconnect();
         setStatus('idle');
-      } else if (listeners.size) {
+      } else if (listeners.size || notificationListeners.size) {
         setStatus('connecting');
         s.connect();
       }
@@ -289,6 +296,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     appStateSub = null;
     for (const id of typing.keys()) stopTyping(id);
     typing.clear();
+    notificationListeners.clear();
     socket?.removeAllListeners();
     socket?.disconnect();
     socket = null;
@@ -316,7 +324,17 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
         stopTyping(communityId);
         typing.delete(communityId);
         if (socket?.connected) socket.emit('unsubscribe', { communityId });
-        if (!listeners.size) idleTimer = setTimeout(close, IDLE_DISCONNECT_MS);
+        if (!listeners.size && !notificationListeners.size) idleTimer = setTimeout(close, IDLE_DISCONNECT_MS);
+      };
+    },
+    subscribeNotifications(onNotification) {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+      notificationListeners.add(onNotification);
+      open();
+      return () => {
+        notificationListeners.delete(onNotification);
+        if (!listeners.size && !notificationListeners.size) idleTimer = setTimeout(close, IDLE_DISCONNECT_MS);
       };
     },
     sendTyping(communityId) {

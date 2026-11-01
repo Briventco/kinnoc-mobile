@@ -1,9 +1,12 @@
+import { useEffect } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, type InfiniteData } from '@tanstack/react-query';
 
 import type { AppNotification, NotificationPreferences, Page } from '@/api/types';
 import { nextCursor, snapshot } from '@/lib/cache';
 import { keys, queryClient } from '@/lib/query';
-import { api } from '@/services';
+import { api, realtime } from '@/services';
+
+const notificationsEnabled = () => api.capabilities.notifications ?? api.capabilities.social;
 
 export function useNotifications() {
   return useInfiniteQuery({
@@ -11,7 +14,7 @@ export function useNotifications() {
     queryFn: ({ pageParam }) => api.notifications.list(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: nextCursor,
-    enabled: api.capabilities.social,
+    enabled: notificationsEnabled(),
   });
 }
 
@@ -20,7 +23,7 @@ export function useUnreadNotificationCount() {
     queryKey: keys.unreadNotifications,
     queryFn: () => api.notifications.unreadCount(),
     refetchInterval: 60_000,
-    enabled: api.capabilities.social,
+    enabled: notificationsEnabled(),
   });
 }
 
@@ -57,11 +60,26 @@ export function useMarkAllNotificationsRead() {
   });
 }
 
+export function useDeleteNotification() {
+  return useMutation({
+    mutationFn: (id: string) => api.notifications.delete ? api.notifications.delete(id) : Promise.resolve(),
+    onMutate: (id) => {
+      const restore = snapshot([keys.notifications]);
+      queryClient.setQueryData<InfiniteData<Page<AppNotification>>>(keys.notifications, (d) =>
+        d ? { ...d, pages: d.pages.map((p) => ({ ...p, items: p.items.filter((n) => n.id !== id) })) } : d,
+      );
+      return { restore };
+    },
+    onError: (_e, _v, ctx) => ctx?.restore(),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: keys.unreadNotifications }),
+  });
+}
+
 export function useNotificationPreferences() {
   return useQuery({
     queryKey: keys.notificationPrefs,
     queryFn: () => api.notifications.preferences(),
-    enabled: api.capabilities.social,
+    enabled: notificationsEnabled(),
   });
 }
 
@@ -76,4 +94,14 @@ export function useUpdateNotificationPreferences() {
     onError: (_e, _v, ctx) => ctx?.restore(),
     onSuccess: (prefs) => queryClient.setQueryData(keys.notificationPrefs, prefs),
   });
+}
+
+export function useLiveNotifications() {
+  useEffect(() => {
+    if (!realtime.subscribeNotifications) return;
+    return realtime.subscribeNotifications(({ unreadCount }) => {
+      queryClient.setQueryData(keys.unreadNotifications, unreadCount);
+      queryClient.invalidateQueries({ queryKey: keys.notifications });
+    });
+  }, []);
 }

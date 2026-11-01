@@ -405,4 +405,78 @@ describe('createHttpApi', () => {
       expect(profile.avatarUrl).toBeNull();
     });
   });
+
+  describe('notifications', () => {
+    it('lists notifications and queries unread count', async () => {
+      const fakePage = {
+        items: [
+          {
+            id: 'n1',
+            recipientId: 'u1',
+            actorId: 'u2',
+            actor: { id: 'u2', username: 'bob', displayName: 'Bob', avatarUrl: null },
+            type: 'POST_LIKE',
+            title: 'Liked your post',
+            body: 'Great work!',
+            entityType: 'post',
+            entityId: 'p1',
+            targetUrl: '/feed?postId=p1',
+            isRead: false,
+            readAt: null,
+            createdAt: '2026-11-01T10:00:00.000Z',
+          },
+        ],
+        nextCursor: null,
+      };
+
+      const { client, calls } = fakeClient((_method, path) =>
+        path === '/notifications/unread-count' ? { count: 3 } : fakePage,
+      );
+      const api = createHttpApi(client, options);
+
+      const page = await api.notifications.list(null);
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0].kind).toBe('like');
+      expect(page.items[0].read).toBe(false);
+      expect(page.items[0].target).toBe('/feed?postId=p1');
+
+      const count = await api.notifications.unreadCount();
+      expect(count).toBe(3);
+      expect(calls).toEqual([
+        ['GET', '/notifications', { query: { cursor: null } }],
+        ['GET', '/notifications/unread-count', undefined],
+      ]);
+    });
+
+    it('marks notifications as read and manages push endpoints', async () => {
+      const { client, calls } = fakeClient((_method, path) =>
+        path === '/notifications/push-key' ? { publicKey: 'mock-vapid' } : {},
+      );
+      const api = createHttpApi(client, options);
+
+      await api.notifications.markRead('n1');
+      await api.notifications.markAllRead();
+      await api.notifications.delete('n1');
+      const key = await api.notifications.vapidPublicKey();
+      await api.notifications.subscribePush({
+        endpoint: 'https://push.example.com',
+        keys: { p256dh: 'key1', auth: 'auth1' },
+      });
+      await api.notifications.unsubscribePush('https://push.example.com');
+
+      expect(key).toBe('mock-vapid');
+      expect(calls).toEqual([
+        ['PATCH', '/notifications/n1/read', undefined],
+        ['PATCH', '/notifications/read-all', undefined],
+        ['DELETE', '/notifications/n1', undefined],
+        ['GET', '/notifications/push-key', undefined],
+        [
+          'POST',
+          '/notifications/push-subscriptions',
+          { body: { endpoint: 'https://push.example.com', keys: { p256dh: 'key1', auth: 'auth1' } } },
+        ],
+        ['DELETE', '/notifications/push-subscriptions', { body: { endpoint: 'https://push.example.com' } }],
+      ]);
+    });
+  });
 });

@@ -105,7 +105,7 @@ export default function FeedScreen() {
               <IconButton icon={RotateCw} label="Refresh feed" onPress={() => void refresh(scope)} />
             )
           ) : null}
-          {api.capabilities.social ? (
+          {(api.capabilities.notifications ?? api.capabilities.social) ? (
             <IconButton
               icon={Bell}
               label={unread.data ? `Notifications, ${unread.data} new` : 'Notifications'}
