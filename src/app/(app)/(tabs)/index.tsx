@@ -25,7 +25,7 @@ import { useMe } from '@/features/profile/hooks';
 import { flattenUnique } from '@/lib/cache';
 import { useWebPullToRefresh } from '@/lib/useWebPullToRefresh';
 import { api } from '@/services';
-import { colors, gutter, size, space } from '@/theme';
+import { colors, radius, size, space } from '@/theme';
 
 // Following people is not offered by every backend; without it there is no Following feed.
 const SCOPES: { key: FeedScope; label: string }[] = [
@@ -78,14 +78,23 @@ export default function FeedScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <View style={styles.header}>
-        <Image
-          source={require('@/assets/images/brand/kinnoc-lockup-blue.png')}
-          style={styles.lockup}
-          contentFit="contain"
-          accessibilityLabel="Kinnoc"
-          accessibilityRole="header"
-        />
-        <View style={styles.headerActions}>
+        <View style={styles.headerSide}>
+          <IconButton
+            icon={Search}
+            label="Search Discover"
+            onPress={() => router.push({ pathname: '/discover', params: { search: String(Date.now()) } })}
+          />
+        </View>
+        <View style={styles.headerCenter}>
+          <Image
+            source={require('@/assets/images/brand/kinnoc-lockup-blue.png')}
+            style={styles.lockup}
+            contentFit="contain"
+            accessibilityLabel="Kinnoc"
+            accessibilityRole="header"
+          />
+        </View>
+        <View style={[styles.headerSide, styles.headerActions]}>
           {/* Desktop browsers have no pull gesture; a button refreshes there (and on touch web too). */}
           {Platform.OS === 'web' ? (
             refreshing ? (
@@ -96,7 +105,6 @@ export default function FeedScreen() {
               <IconButton icon={RotateCw} label="Refresh feed" onPress={() => void refresh(scope)} />
             )
           ) : null}
-          <IconButton icon={Search} label="Search Discover" onPress={() => router.push({ pathname: '/discover', params: { search: String(Date.now()) } })} />
           {api.capabilities.social ? (
             <IconButton
               icon={Bell}
@@ -121,20 +129,22 @@ function Composer() {
   const me = useMe();
   return (
     // Two sibling buttons, not one inside the other, so screen readers reach both.
-    <View style={styles.composer}>
+    <View style={styles.composerCard}>
       <Pressable
         onPress={() => router.push('/compose')}
         style={styles.composerPrompt}
         accessibilityRole="button"
         accessibilityLabel="Share something with your communities"
-        pressedOpacity={0.7}
+        pressedOpacity={0.8}
       >
         <Avatar name={me.data?.displayName ?? ''} uri={me.data?.avatarUrl} size={36} />
-        <Text variant="message" color="textTertiary" style={styles.flex} numberOfLines={1}>
-          Share something with your communities
-        </Text>
+        <View style={styles.promptInput}>
+          <Text variant="message" color="textTertiary" numberOfLines={1}>
+            Share something with your communities…
+          </Text>
+        </View>
       </Pressable>
-      <IconButton icon={ImageIcon} label="Add a photo" color="textTertiary" onPress={() => router.push({ pathname: '/compose', params: { photo: '1' } })} />
+      <IconButton icon={ImageIcon} label="Add a photo" color="primary" onPress={() => router.push({ pathname: '/compose', params: { photo: '1' } })} />
     </View>
   );
 }
@@ -149,25 +159,20 @@ function FeedList({ scope, onRefresh, listRef }: { scope: FeedScope; onRefresh: 
     item.kind === 'post' ? <PostRow post={item} /> : <UpdateBand update={item} />;
 
   const header = (
-    <>
+    <View style={styles.headerBlock}>
       {scope === 'for-you' && api.capabilities.social ? (
         <>
           <StoryRow />
           <Hairline />
         </>
       ) : null}
-      {api.capabilities.feed ? (
-        <>
-          <Composer />
-          <Hairline />
-        </>
-      ) : null}
-    </>
+      {api.capabilities.feed ? <Composer /> : null}
+    </View>
   );
 
   if (feed.isPending) {
     return (
-      <View>
+      <View style={styles.flex}>
         {header}
         <SkeletonList rows={4} media />
       </View>
@@ -182,7 +187,6 @@ function FeedList({ scope, onRefresh, listRef }: { scope: FeedScope; onRefresh: 
         data={items}
         keyExtractor={(item) => `${item.kind}:${item.id}`}
         renderItem={renderItem}
-        ItemSeparatorComponent={Hairline}
         ListHeaderComponent={
           <>
             {header}
@@ -204,7 +208,7 @@ function FeedList({ scope, onRefresh, listRef }: { scope: FeedScope; onRefresh: 
         }
         ListFooterComponent={<ListFooter loading={feed.isFetchingNextPage} />}
         // An empty feed fills the space down to the tab bar, so its message can sit in the middle.
-        contentContainerStyle={items.length ? undefined : styles.fill}
+        contentContainerStyle={items.length ? styles.listContent : styles.fill}
         // One page at a time, and never during a refresh, whose new first page replaces the list.
         onEndReached={() => feed.hasNextPage && !feed.isFetching && !refreshing && feed.fetchNextPage()}
         onEndReachedThreshold={0.6}
@@ -217,16 +221,62 @@ function FeedList({ scope, onRefresh, listRef }: { scope: FeedScope; onRefresh: 
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface2 },
   flex: { flex: 1 },
   hidden: { display: 'none' },
   headerSpinner: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  fill: { flexGrow: 1 },
+  fill: { flexGrow: 1, backgroundColor: colors.surface2 },
   // Centred in the space under the composer, nudged above the middle so it reads as balanced.
   empty: { flex: 1, justifyContent: 'center', paddingTop: space[6], paddingBottom: space[8] * 2 },
-  header: { height: size.headerHeight, flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10 },
-  lockup: { height: 34, width: 70, marginRight: 'auto' },
-  headerActions: { flexDirection: 'row' },
-  composer: { flexDirection: 'row', alignItems: 'center', paddingLeft: gutter, paddingRight: gutter - 10, paddingVertical: space[2] },
-  composerPrompt: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 44 },
+  header: {
+    height: size.headerHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth * 2,
+    borderBottomColor: colors.border,
+  },
+  headerSide: { width: 88, flexDirection: 'row', alignItems: 'center' },
+  headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { justifyContent: 'flex-end' },
+  lockup: { height: 32, width: 84 },
+  headerBlock: {
+    backgroundColor: colors.surface2,
+    paddingBottom: 4,
+  },
+  composerCard: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#0E1B3D',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  composerPrompt: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  promptInput: {
+    flex: 1,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  listContent: {
+    paddingTop: 4,
+    paddingBottom: space[6],
+  },
 });

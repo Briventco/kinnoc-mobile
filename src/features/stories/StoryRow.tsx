@@ -10,12 +10,12 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { describeError } from '@/api/errors';
 import { pickImages } from '@/lib/media';
-import { colors, gutter, space } from '@/theme';
+import { colors, gutter } from '@/theme';
 
 import { useCreateStory, useStories } from './hooks';
 
-const SIZE = 58;
-const RING = 3;
+const SIZE = 56;
+const RING = 2.5;
 
 /** Stories always show a face: the person's photo, or a neutral silhouette, never initials. */
 export function StoryAvatar({ uri, size }: { uri: string | null; size: number }) {
@@ -31,7 +31,13 @@ export function StoryAvatar({ uri, size }: { uri: string | null; size: number })
 
 function Bubble({ reel, onPress, onAdd, busy }: { reel: StoryReel; onPress: () => void; onAdd?: () => void; busy?: boolean }) {
   const hasFrames = reel.frames.length > 0;
-  const ringColor = reel.isMine ? (hasFrames ? colors.border : 'transparent') : reel.seen ? colors.border : colors.primary;
+  const ringColor = reel.isMine
+    ? hasFrames
+      ? colors.brandBlue
+      : colors.border
+    : reel.seen
+      ? colors.border
+      : colors.brandBlue;
   const label = reel.isMine ? 'Your story' : reel.author.displayName.split(' ')[0];
   return (
     // The "+" is a sibling of the story button, laid over it, so screen readers reach both.
@@ -52,7 +58,7 @@ function Bubble({ reel, onPress, onAdd, busy }: { reel: StoryReel; onPress: () =
       </Pressable>
       {reel.isMine && onAdd ? (
         <Pressable onPress={onAdd} style={styles.add} accessibilityRole="button" accessibilityLabel="Add a photo to your story" hitSlop={8}>
-          <Plus size={14} color={colors.onPrimary} strokeWidth={3} />
+          <Plus size={13} color="#FFFFFF" strokeWidth={2.75} />
         </Pressable>
       ) : null}
     </View>
@@ -118,26 +124,26 @@ export function StoryRow() {
 }
 
 const styles = StyleSheet.create({
-  row: { paddingHorizontal: gutter, paddingTop: 10, paddingBottom: space[2], gap: space[3], alignItems: 'flex-start' },
+  row: { paddingHorizontal: gutter, paddingTop: 12, paddingBottom: 10, gap: 14, backgroundColor: colors.surface },
   skeleton: { flexDirection: 'row' },
-  item: { width: SIZE + RING * 4 + 4 },
+  item: { width: SIZE + 12 },
   itemButton: { alignItems: 'center', gap: 6 },
-  ring: { padding: RING - 1, borderRadius: SIZE, borderWidth: RING },
+  ring: { padding: 2.5, borderRadius: (SIZE + 10) / 2, borderWidth: RING, backgroundColor: colors.surface },
   busy: { opacity: 0.5 },
   add: {
     position: 'absolute',
-    top: SIZE - 10,
+    top: SIZE - 14,
     right: 2,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.text,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.brandBlue,
     borderWidth: 2,
     borderColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  label: { maxWidth: SIZE + 16, textAlign: 'center' },
+  label: { maxWidth: SIZE + 16, textAlign: 'center', fontSize: 12, lineHeight: 16 },
   photo: { backgroundColor: colors.surface3 },
   silhouette: { backgroundColor: colors.surface3, alignItems: 'center', justifyContent: 'center' },
   none: { alignSelf: 'center', maxWidth: 220 },
