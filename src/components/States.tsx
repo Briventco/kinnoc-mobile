@@ -69,7 +69,7 @@ export function SkeletonList({
       ) : null}
       <Animated.View style={{ opacity }}>
         {Array.from({ length: rows }, (_, i) => (
-          <View key={i} style={styles.skeletonRow}>
+          <View key={i} style={[styles.skeletonRow, media && styles.skeletonRowCard]}>
             <View style={styles.skeletonHead}>
               <SkeletonBlock
                 style={{ width: 44, height: 44, borderRadius: shape === 'circle' ? 22 : communityRadius(44) }}
@@ -276,6 +276,15 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   block: { backgroundColor: colors.surface3, borderRadius: 6 },
   skeletonRow: { paddingHorizontal: gutter, paddingVertical: 14, gap: 12 },
+  skeletonRowCard: {
+    marginHorizontal: 12,
+    marginVertical: 5,
+    padding: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   skeletonNotice: { paddingVertical: space[3], paddingHorizontal: gutter, alignItems: 'center' },
   skeletonNoticeText: { textAlign: 'center' },
   skeletonHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
