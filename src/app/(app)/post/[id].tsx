@@ -21,7 +21,8 @@ import { PostRow } from '@/features/feed/PostRow';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { ProfileLink } from '@/features/profile/ProfileLink';
 import { flattenUnique } from '@/lib/cache';
-import { formatAge, plural } from '@/lib/format';
+import { plural } from '@/lib/format';
+import { useRelativeTime } from '@/lib/useRelativeTime';
 import { KEYBOARD_BEHAVIOR, useBottomBarInset } from '@/lib/useKeyboardVisible';
 import { colors, fonts, gutter, radius, space } from '@/theme';
 
@@ -39,6 +40,7 @@ const firstName = (c: Comment) => c.author?.displayName.split(' ')[0] ?? 'Former
 function CommentRow({ comment, actions, reply }: { comment: Comment; actions: CommentActions; reply?: boolean }) {
   const deleted = !!comment.deletedAt;
   const hasMenu = !deleted && (comment.isMine || actions.canDelete(comment));
+  const commentAge = useRelativeTime(comment.createdAt);
   return (
     <View style={[styles.comment, reply && styles.reply]}>
       <ProfileLink username={deleted ? null : comment.author?.username} label={`${comment.author?.displayName ?? 'Their'}'s profile`}>
@@ -55,7 +57,7 @@ function CommentRow({ comment, actions, reply }: { comment: Comment; actions: Co
           </ProfileLink>
           <Text variant="meta" color="textTertiary">
             {' '}
-            · {formatAge(comment.createdAt)}
+            · {commentAge}
             {comment.editedAt && !deleted ? ' · Edited' : ''}
           </Text>
         </View>

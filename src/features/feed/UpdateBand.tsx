@@ -6,12 +6,14 @@ import type { CommunityUpdate } from '@/api/types';
 import { CommunityAvatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
-import { formatAge, formatDayTime } from '@/lib/format';
+import { formatDayTime } from '@/lib/format';
+import { useRelativeTime } from '@/lib/useRelativeTime';
 import { colors, gutter, space } from '@/theme';
 
 /** A community update: a full-bleed mist band with a Bricolage headline, date and place. */
 export function UpdateBand({ update }: { update: CommunityUpdate }) {
   const { community } = update;
+  const age = useRelativeTime(update.createdAt);
   return (
     <View style={styles.band}>
       <View style={styles.source}>
@@ -21,7 +23,7 @@ export function UpdateBand({ update }: { update: CommunityUpdate }) {
             {community.name}
           </Text>
           {' · Update · '}
-          {formatAge(update.createdAt)}
+          {age}
         </Text>
       </View>
       <Text variant="headline" accessibilityRole="header">

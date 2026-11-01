@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 
 import type { FeedScope, Page } from '@/api/types';
 import { keys, queryClient } from '@/lib/query';
+import { refreshRelativeTimestamps } from '@/lib/useRelativeTime';
 import { api } from '@/services';
 
 /**
@@ -56,6 +57,7 @@ export async function refreshFeed(scope: FeedScope): Promise<boolean> {
   notify();
   try {
     await refreshFirstPage(keys.feed(scope), (cursor) => api.feed.list(scope, cursor));
+    refreshRelativeTimestamps();
     return true;
   } finally {
     running.delete(scope);

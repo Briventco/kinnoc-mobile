@@ -138,15 +138,46 @@ export function dateStamp(iso: string, timeZone?: string | null) {
   return { month: MONTHS[w.month].toUpperCase(), day: String(w.day) };
 }
 
-/** Feed and notification ages: "now", "12m", "3h", "2d", then "24 Oct". */
-export function formatAge(iso: string, now = Date.now()) {
-  const ms = now - new Date(iso).getTime();
-  if (ms < MIN) return 'now';
-  if (ms < HOUR) return `${Math.floor(ms / MIN)}m`;
-  if (ms < DAY) return `${Math.floor(ms / HOUR)}h`;
-  if (ms < 7 * DAY) return `${Math.floor(ms / DAY)}d`;
-  const d = new Date(iso);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+/**
+ * Relative timestamp formatting:
+ * - < 2s: "Just now"
+ * - < 60s: "X seconds ago" (or "1 second ago")
+ * - < 60m: "X minutes ago" (or "1 minute ago")
+ * - < 24h: "X hours ago" (or "1 hour ago")
+ * - < 7d: "X days ago" (or "1 day ago")
+ * - >= 7d: "D Mon" (e.g. "24 Oct"), or "D Mon YYYY" if another year.
+ */
+export function formatRelativeTime(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return '';
+  const timestamp = new Date(iso).getTime();
+  if (Number.isNaN(timestamp)) return '';
+
+  const ms = now - timestamp;
+  if (ms < 2000) return 'Just now';
+
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec} ${sec === 1 ? 'second' : 'seconds'} ago`;
+
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} ${min === 1 ? 'minute' : 'minutes'} ago`;
+
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} ${hr === 1 ? 'hour' : 'hours'} ago`;
+
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+
+  const d = new Date(timestamp);
+  const nowYear = new Date(now).getFullYear();
+  if (d.getFullYear() === nowYear) {
+    return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  }
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** Feed and notification ages. Uses formatRelativeTime for continuous live precision. */
+export function formatAge(iso: string, now = Date.now()): string {
+  return formatRelativeTime(iso, now);
 }
 
 /** Longer ages for notifications: "12 min ago", "1 hour ago", "Yesterday", "Fri". */

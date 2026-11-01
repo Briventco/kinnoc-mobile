@@ -65,4 +65,14 @@ describe('validateCommunity', () => {
     expect(validateCommunity({ ...validValues, description: '' }).description).toBe('Say what the community is about.');
     expect(validateCommunity({ ...validValues, description: 'a'.repeat(1001) }).description).toBe('Keep it under 1000 characters.');
   });
+
+  it.each([
+    ['Technology', 'technology'],
+    ['Education', 'education'],
+    ['Business & Entrepreneurship', 'business-entrepreneurship'],
+    ['Other', 'other'],
+  ])('satisfies category validation for %s (%s)', (_, slug) => {
+    const errors = validateCommunity({ ...validValues, category: slug });
+    expect(errors.category).toBeNull();
+  });
 });

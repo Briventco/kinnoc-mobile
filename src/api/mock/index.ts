@@ -8,6 +8,7 @@
  * - Conversations in private communities are refused to non-members, as the server must.
  */
 import type { KinnocApi } from '../contract';
+import { DEFAULT_COMMUNITY_CATEGORIES } from '../categories';
 import { ApiError } from '../errors';
 import type { ConversationEvent, RealtimeClient } from '../realtime';
 import type {
@@ -405,7 +406,13 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       },
       async categories() {
         await delay(150);
-        const seen = new Map(state.communities.map((c) => [c.categorySlug, c.category]));
+        const seen = new Map<string, string>();
+        for (const cat of DEFAULT_COMMUNITY_CATEGORIES) {
+          seen.set(cat.slug, cat.name);
+        }
+        for (const c of state.communities) {
+          seen.set(c.categorySlug, c.category);
+        }
         return [...seen].map(([slug, name]) => ({ slug, name })).sort((a, b) => a.name.localeCompare(b.name));
       },
       async get(ref) {
@@ -426,7 +433,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
           photoUrl: input.avatarKey ?? null,
           coverUrl: input.coverKey ?? null,
           memberCount: 1,
-          category: state.communities.find((x) => x.categorySlug === input.category)?.category ?? input.category,
+          category: DEFAULT_COMMUNITY_CATEGORIES.find((x) => x.slug === input.category)?.name ?? state.communities.find((x) => x.categorySlug === input.category)?.category ?? input.category,
           categorySlug: input.category,
           visibility: input.visibility,
           joinPolicy: input.visibility === 'private' ? ('invite-only' as const) : input.joinPolicy,
