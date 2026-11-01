@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ArrowUp, Ellipsis, Pencil, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { FlatList, KeyboardAvoidingView, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
@@ -122,16 +122,22 @@ export default function PostDetail() {
   const post = usePost(id);
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={KEYBOARD_BEHAVIOR}>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <ScreenHeader title="Post" />
-      {post.isPending ? (
-        <CenteredSpinner />
-      ) : post.isError ? (
-        <ErrorState error={post.error} onRetry={() => post.refetch()} />
-      ) : (
-        <Discussion post={post.data} />
-      )}
-    </KeyboardAvoidingView>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={KEYBOARD_BEHAVIOR}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}
+      >
+        {post.isPending ? (
+          <CenteredSpinner />
+        ) : post.isError ? (
+          <ErrorState error={post.error} onRetry={() => post.refetch()} />
+        ) : (
+          <Discussion post={post.data} />
+        )}
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -323,7 +329,7 @@ function Discussion({ post }: { post: Post }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface, overflow: 'hidden' },
   flex: { flex: 1, minWidth: 0, gap: 2 },
   repliesLabel: { paddingHorizontal: gutter, paddingTop: space[4], paddingBottom: space[1] },
   noReplies: { paddingHorizontal: gutter, paddingVertical: space[4] },

@@ -10,13 +10,15 @@ interface ResponsiveContainerProps {
 }
 
 /**
- * Responsive viewport container for web desktop.
- * - On mobile (native or small web screens <= 480px): full screen with native/fluid sizing.
+ * Responsive viewport container for web desktop and mobile browsers.
+ * - On mobile (native): pass-through without wrapping views.
+ * - On mobile web (<= 480px): dynamically matches visualViewport height so keyboard appearance
+ *   does not scroll the window or obscure headers.
  * - On desktop web (> 480px): keeps the application within a centered, phone-width container
  *   against a subtle Kinnoc mist background (surface2), with clean hairlines and no horizontal overflow.
  */
 export function ResponsiveContainer({ children }: ResponsiveContainerProps) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isDesktop = Platform.OS === 'web' && width > DESKTOP_MAX_WIDTH;
 
   if (Platform.OS !== 'web') {
@@ -24,8 +26,8 @@ export function ResponsiveContainer({ children }: ResponsiveContainerProps) {
   }
 
   return (
-    <View style={[styles.viewport, isDesktop && styles.viewportDesktop]}>
-      <View style={[styles.column, isDesktop && styles.columnDesktop]}>
+    <View style={[styles.viewport, { height }, isDesktop && styles.viewportDesktop]}>
+      <View style={[styles.column, { height }, isDesktop && styles.columnDesktop]}>
         {children}
       </View>
     </View>
@@ -38,6 +40,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: colors.surface,
+    overflow: 'hidden',
   },
   viewportDesktop: {
     backgroundColor: colors.surface2,
@@ -49,6 +52,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: colors.surface,
+    overflow: 'hidden',
   },
   columnDesktop: {
     maxWidth: DESKTOP_MAX_WIDTH,

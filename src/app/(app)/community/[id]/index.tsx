@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronDown, ChevronRight, EllipsisVertical, Lock, Pin, Reply, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
@@ -246,25 +246,33 @@ function Conversation({ community, renderHeader }: { community: Community; rende
   const connectingLabel = realtime.live && (connection === 'connecting' || connection === 'offline') ? 'Connecting…' : undefined;
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: insets.top }]} behavior={KEYBOARD_BEHAVIOR}>
-      {renderHeader(typingLabel ?? connectingLabel)}
-      {community.pinned ? (
-        <Pressable
-          style={styles.pinned}
-          onPress={() => router.push({ pathname: '/community/[id]/info', params: { id: community.id } })}
-          accessibilityRole="button"
-          accessibilityLabel={`Pinned: ${community.pinned.title}. ${community.pinned.body}`}
-        >
-          <Pin size={16} color={colors.primary} strokeWidth={2} />
-          <Text variant="preview" numberOfLines={1} style={styles.flex}>
-            <Text variant="name" style={styles.pinnedTitle}>
-              Pinned
-            </Text>{' '}
-            {community.pinned.title}: {community.pinned.body}
-          </Text>
-          <ChevronRight size={18} color={colors.textTertiary} strokeWidth={1.75} />
-        </Pressable>
-      ) : null}
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.fixedHeader}>
+        {renderHeader(typingLabel ?? connectingLabel)}
+        {community.pinned ? (
+          <Pressable
+            style={styles.pinned}
+            onPress={() => router.push({ pathname: '/community/[id]/info', params: { id: community.id } })}
+            accessibilityRole="button"
+            accessibilityLabel={`Pinned: ${community.pinned.title}. ${community.pinned.body}`}
+          >
+            <Pin size={16} color={colors.primary} strokeWidth={2} />
+            <Text variant="preview" numberOfLines={1} style={styles.flex}>
+              <Text variant="name" style={styles.pinnedTitle}>
+                Pinned
+              </Text>{' '}
+              {community.pinned.title}: {community.pinned.body}
+            </Text>
+            <ChevronRight size={18} color={colors.textTertiary} strokeWidth={1.75} />
+          </Pressable>
+        ) : null}
+      </View>
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={KEYBOARD_BEHAVIOR}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + (community.pinned ? 104 : 56) : 0}
+      >
 
       {messages.isPending ? (
         <MessageSkeleton />
@@ -393,7 +401,8 @@ function Conversation({ community, renderHeader }: { community: Community; rende
           remove.mutate(target.id, { onError: (e) => toast.show({ message: `Couldn't delete. ${describeError(e)}`, aboveNav: false }) });
         }}
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -477,7 +486,8 @@ function MessageActions({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface, overflow: 'hidden' },
+  fixedHeader: { zIndex: 10, backgroundColor: colors.surface },
   flex: { flex: 1, minWidth: 0 },
   identity: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pinned: {

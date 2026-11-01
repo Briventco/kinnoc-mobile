@@ -231,7 +231,7 @@ function EditorFrame({
   const close = () => (dirty && !busy ? setDiscard(true) : router.back());
 
   return (
-    <KeyboardAvoidingView style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]} behavior={KEYBOARD_BEHAVIOR}>
+    <View style={[styles.root, { paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
       <View style={styles.header}>
         <IconButton icon={X} label="Close" onPress={close} />
         <Text variant="screenTitle" style={styles.title} accessibilityRole="header">
@@ -241,25 +241,31 @@ function EditorFrame({
         <Button label={action} size="small" onPress={onSubmit} loading={busy} disabled={!canSubmit || busy} style={styles.post} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {children}
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={KEYBOARD_BEHAVIOR}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 56 : 0}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
 
-      {toolbar ? <View style={[styles.toolbar, { paddingBottom: toolbarInset }]}>{toolbar}</View> : null}
+        {toolbar ? <View style={[styles.toolbar, { paddingBottom: toolbarInset }]}>{toolbar}</View> : null}
 
-      <ConfirmDialog
-        visible={discard}
-        title="Discard this post?"
-        body="What you've written will be lost."
-        confirmLabel="Discard"
-        destructive
-        onCancel={() => setDiscard(false)}
-        onConfirm={() => {
-          setDiscard(false);
-          router.back();
-        }}
-      />
-    </KeyboardAvoidingView>
+        <ConfirmDialog
+          visible={discard}
+          title="Discard this post?"
+          body="What you've written will be lost."
+          confirmLabel="Discard"
+          destructive
+          onCancel={() => setDiscard(false)}
+          onConfirm={() => {
+            setDiscard(false);
+            router.back();
+          }}
+        />
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -321,7 +327,8 @@ function LinkInput({ value, onChange, error, autoFocus }: { value: string; onCha
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface, overflow: 'hidden' },
+  flex: { flex: 1 },
   header: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: colors.border },
   title: { flex: 1, marginLeft: 4 },
   post: { marginRight: 10 },
@@ -329,7 +336,14 @@ const styles = StyleSheet.create({
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   audience: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, borderRadius: radius.field, backgroundColor: colors.surface2, flexShrink: 1 },
   audienceText: { flexShrink: 1 },
-  input: { minHeight: 140, fontFamily: fonts.body400, fontSize: 18, lineHeight: 26, color: colors.text, textAlignVertical: 'top' },
+  input: {
+    minHeight: 140,
+    fontFamily: fonts.body400,
+    fontSize: 18,
+    lineHeight: 26,
+    color: colors.text,
+    textAlignVertical: 'top',
+  },
   counter: { textAlign: 'right' },
   photos: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   photoWrap: { width: '48%' },
@@ -338,7 +352,13 @@ const styles = StyleSheet.create({
   linkField: { gap: space[1] },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 48, paddingLeft: 12, borderRadius: radius.field, backgroundColor: colors.surface2, borderWidth: 1, borderColor: 'transparent' },
   linkRowError: { borderColor: colors.warning },
-  linkInput: { flex: 1, minHeight: 44, fontFamily: fonts.body400, fontSize: 16, color: colors.text },
+  linkInput: {
+    flex: 1,
+    minHeight: 44,
+    fontFamily: fonts.body400,
+    fontSize: 16,
+    color: colors.text,
+  },
   toolbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: colors.border },
   toolbarHint: { marginLeft: 'auto', marginRight: gutter - 6 },
 });

@@ -29,6 +29,60 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#FFFFFF" />
 
         <ScrollViewStyleReset />
+        <style
+          id="kinnoc-web-reset"
+          dangerouslySetInnerHTML={{
+            __html: `
+              /* Lock viewport and prevent window scrolling / shifting when inputs focus */
+              html, body {
+                height: 100%;
+                width: 100%;
+                margin: 0;
+                padding: 0;
+                overflow: hidden;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                overscroll-behavior: none;
+                -webkit-overflow-scrolling: touch;
+              }
+              #root {
+                display: flex;
+                height: 100%;
+                width: 100%;
+                flex: 1;
+                overflow: hidden;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+              }
+              /* Eliminate blue focus ring / box line across all browsers */
+              *, *:focus, *:focus-visible, *:active {
+                -webkit-tap-highlight-color: transparent !important;
+              }
+              input, textarea, select, button, [contenteditable], [role="textbox"] {
+                outline: none !important;
+                outline-width: 0 !important;
+                box-shadow: none !important;
+                -webkit-tap-highlight-color: transparent !important;
+              }
+              input:focus, input:focus-visible,
+              textarea:focus, textarea:focus-visible,
+              select:focus, select:focus-visible,
+              button:focus, button:focus-visible,
+              [contenteditable]:focus, [role="textbox"]:focus {
+                outline: none !important;
+                outline-width: 0 !important;
+                box-shadow: none !important;
+                -webkit-tap-highlight-color: transparent !important;
+              }
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>
