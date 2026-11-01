@@ -13,6 +13,8 @@ import {
   type ApiMember,
   type ApiMessage,
   type ApiMessagePage,
+  type ApiNotification,
+  type ApiNotificationPreferences,
   type ApiOwnVerification,
   type ApiPost,
   type ApiPublicProfile,
@@ -33,6 +35,9 @@ import {
   toMember,
   toMessage,
   toMessagePage,
+  toNotification,
+  toNotificationPreferences,
+  toApiNotificationPreferences,
   toOwnProfile,
   toOwnVerification,
   toPost,
@@ -97,6 +102,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
     capabilities: {
       feed: true,
       social: false,
+      notifications: true,
       // The API publishes events only; opportunities and resources are not in it yet.
       discoverKinds: ['event'],
       reactions: false,
@@ -314,12 +320,44 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       mine: async () => toOwnVerification(await client.get<ApiOwnVerification>('/users/me/verification')),
     },
     notifications: {
-      list: notAvailable('Notifications'),
-      unreadCount: notAvailable('Notifications'),
-      markRead: notAvailable('Notifications'),
-      markAllRead: notAvailable('Notifications'),
-      preferences: notAvailable('Notification settings'),
-      updatePreferences: notAvailable('Notification settings'),
+      list: async (cursor) =>
+        mapPage(
+          await client.get<Page<ApiNotification>>('/notifications', { query: { cursor } }),
+          toNotification,
+        ),
+      unreadCount: async () => {
+        const res = await client.get<{ count: number }>('/notifications/unread-count');
+        return res.count;
+      },
+      markRead: async (notificationId) => {
+        await client.patch(`/notifications/${enc(notificationId)}/read`);
+      },
+      markAllRead: async () => {
+        await client.patch('/notifications/read-all');
+      },
+      delete: async (notificationId) => {
+        await client.delete(`/notifications/${enc(notificationId)}`);
+      },
+      preferences: async () =>
+        toNotificationPreferences(
+          await client.get<ApiNotificationPreferences>('/notifications/preferences'),
+        ),
+      updatePreferences: async (prefs) =>
+        toNotificationPreferences(
+          await client.patch<ApiNotificationPreferences>('/notifications/preferences', {
+            body: toApiNotificationPreferences(prefs),
+          }),
+        ),
+      vapidPublicKey: async () => {
+        const res = await client.get<{ publicKey: string }>('/notifications/push-key');
+        return res.publicKey;
+      },
+      subscribePush: async (sub) => {
+        await client.post('/notifications/push-subscriptions', { body: sub });
+      },
+      unsubscribePush: async (endpoint) => {
+        await client.delete('/notifications/push-subscriptions', { body: { endpoint } });
+      },
     },
     stories: {
       list: notAvailable('Stories'),

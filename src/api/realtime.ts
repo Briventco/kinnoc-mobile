@@ -33,6 +33,7 @@ export interface RealtimeClient {
   /** True when events are pushed live. When false, screens refresh by polling. */
   readonly live: boolean;
   subscribe(communityId: ID, onEvent: (event: ConversationEvent) => void): () => void;
+  subscribeNotifications?(onNotification: (event: { type: 'new' | 'read'; unreadCount: number }) => void): () => void;
   sendTyping(communityId: ID): void;
   status(): RealtimeStatus;
   onStatus(listener: (status: RealtimeStatus) => void): () => void;
@@ -44,6 +45,7 @@ export interface RealtimeClient {
 export const noopRealtime: RealtimeClient = {
   live: false,
   subscribe: () => () => {},
+  subscribeNotifications: () => () => {},
   sendTyping: () => {},
   status: () => 'idle',
   onStatus: () => () => {},

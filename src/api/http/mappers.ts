@@ -5,6 +5,7 @@
  */
 import type {
   Account,
+  AppNotification,
   Comment,
   Community,
   CommunityInput,
@@ -19,6 +20,8 @@ import type {
   MembershipStatus,
   Message,
   MessagePage,
+  NotificationKind,
+  NotificationPreferences,
   OwnVerification,
   Page,
   Person,
@@ -535,5 +538,145 @@ export function toOwnVerification(v: ApiOwnVerification | null | undefined): Own
     position: text(v?.position),
     verifiedAt: isInstant(v?.verifiedAt) ? v.verifiedAt : null,
     expiresAt: isInstant(v?.expiresAt) ? v.expiresAt : null,
+  };
+}
+
+export interface ApiNotificationActor {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export interface ApiNotification {
+  id: string;
+  recipientId: string;
+  actorId: string | null;
+  actor: ApiNotificationActor | null;
+  type: string;
+  title: string;
+  body: string;
+  entityType: string;
+  entityId: string;
+  targetUrl: string | null;
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiNotificationPreferences {
+  inAppDirectMessages: boolean;
+  inAppLikes: boolean;
+  inAppComments: boolean;
+  inAppFollows: boolean;
+  inAppMentions: boolean;
+  inAppInvitations: boolean;
+  inAppAnnouncements: boolean;
+  inAppVerifications: boolean;
+  inAppSystem: boolean;
+
+  pushEnabled: boolean;
+  pushDirectMessages: boolean;
+  pushLikes: boolean;
+  pushComments: boolean;
+  pushFollows: boolean;
+  pushMentions: boolean;
+  pushInvitations: boolean;
+  pushAnnouncements: boolean;
+  pushVerifications: boolean;
+  pushSystem: boolean;
+}
+
+const TYPE_TO_KIND: Record<string, NotificationKind> = {
+  POST_LIKE: 'like',
+  POST_COMMENT: 'reply',
+  COMMENT_REPLY: 'reply',
+  USER_MENTION: 'mention',
+  USER_FOLLOW: 'mention',
+  DIRECT_MESSAGE: 'message',
+  COMMUNITY_INVITATION: 'community',
+  COMMUNITY_JOIN_REQUEST: 'community',
+  COMMUNITY_ANNOUNCEMENT: 'community',
+  VERIFICATION_APPROVED: 'verification',
+  VERIFICATION_REVOKED: 'verification',
+  SYSTEM: 'system',
+};
+
+export function toNotification(n: ApiNotification): AppNotification {
+  const kind = TYPE_TO_KIND[n.type] ?? 'system';
+  const actor = n.actor
+    ? {
+        id: n.actor.id,
+        username: n.actor.username,
+        displayName: n.actor.displayName,
+        avatarUrl: n.actor.avatarUrl,
+      }
+    : null;
+
+  let titleSegments: { text: string; strong?: boolean }[];
+  if (actor) {
+    titleSegments = [
+      { text: actor.displayName, strong: true },
+      { text: ` ${n.title.toLowerCase()}` },
+    ];
+  } else {
+    titleSegments = [{ text: n.title, strong: true }];
+  }
+
+  return {
+    id: n.id,
+    kind,
+    actor,
+    title: titleSegments,
+    excerpt: n.body || null,
+    createdAt: n.createdAt,
+    read: n.isRead,
+    target: n.targetUrl,
+  };
+}
+
+export function toNotificationPreferences(p: ApiNotificationPreferences): NotificationPreferences {
+  return {
+    mentions: p.inAppMentions ?? true,
+    replies: p.inAppComments ?? true,
+    likes: p.inAppLikes ?? true,
+    communityActivity: p.inAppInvitations ?? true,
+    reminders: p.inAppAnnouncements ?? true,
+    directMessages: p.inAppDirectMessages ?? true,
+    verifications: p.inAppVerifications ?? true,
+    system: p.inAppSystem ?? true,
+
+    pushEnabled: p.pushEnabled ?? true,
+    pushDirectMessages: p.pushDirectMessages ?? true,
+    pushLikes: p.pushLikes ?? true,
+    pushComments: p.pushComments ?? true,
+    pushMentions: p.pushMentions ?? true,
+    pushInvitations: p.pushInvitations ?? true,
+    pushAnnouncements: p.pushAnnouncements ?? true,
+    pushVerifications: p.pushVerifications ?? true,
+    pushSystem: p.pushSystem ?? true,
+  };
+}
+
+export function toApiNotificationPreferences(p: NotificationPreferences): Partial<ApiNotificationPreferences> {
+  return {
+    inAppMentions: p.mentions,
+    inAppComments: p.replies,
+    inAppLikes: p.likes,
+    inAppInvitations: p.communityActivity,
+    inAppAnnouncements: p.reminders,
+    inAppDirectMessages: p.directMessages,
+    inAppVerifications: p.verifications,
+    inAppSystem: p.system,
+
+    pushEnabled: p.pushEnabled,
+    pushDirectMessages: p.pushDirectMessages,
+    pushLikes: p.pushLikes,
+    pushComments: p.pushComments,
+    pushMentions: p.pushMentions,
+    pushInvitations: p.pushInvitations,
+    pushAnnouncements: p.pushAnnouncements,
+    pushVerifications: p.pushVerifications,
+    pushSystem: p.pushSystem,
   };
 }

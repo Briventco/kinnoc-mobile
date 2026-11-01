@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { AtSign, Bell, CalendarClock, Clock, Heart, MessageCircle, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
+import { AtSign, Bell, CalendarClock, CheckCircle, Clock, Heart, MessageCircle, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
 import { SectionList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,6 +26,9 @@ const BADGE: Record<NotificationKind, { icon: LucideIcon; bg: string } | null> =
   deadline: { icon: Clock, bg: colors.warning },
   'event-reminder': { icon: CalendarClock, bg: colors.brandNavy },
   community: { icon: Users, bg: colors.brandNavy },
+  verification: { icon: CheckCircle, bg: colors.brandBlue },
+  message: { icon: MessageCircle, bg: colors.brandNavy },
+  system: { icon: Bell, bg: colors.brandNavy },
 };
 
 function Identity({ n }: { n: AppNotification }) {
@@ -46,6 +49,12 @@ function Identity({ n }: { n: AppNotification }) {
   } else if (n.community) {
     square = true;
     base = <CommunityAvatar id={n.community.id} monogram={n.community.monogram} uri={n.community.photoUrl} size={44} />;
+  } else {
+    base = (
+      <View style={[styles.stampBox, { backgroundColor: colors.surface2, borderRadius: 22, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }]}>
+        <Bell size={20} color={colors.primary} />
+      </View>
+    );
   }
   // Event and community items are self-explanatory; only people and deadlines get a glyph.
   const showBadge = badge && (n.actor || n.kind === 'deadline');
@@ -100,7 +109,7 @@ export default function NotificationsScreen() {
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
 
-  if (!api.capabilities.social) {
+  if (!(api.capabilities.notifications ?? api.capabilities.social)) {
     return (
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         <ScreenHeader title="Notifications" border={false} />

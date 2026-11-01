@@ -187,6 +187,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     capabilities: {
       feed: true,
       social: true,
+      notifications: true,
       discoverKinds: ['event', 'opportunity', 'resource'],
       reactions: true,
       messageAttachments: true,
@@ -800,6 +801,10 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         await delay(300);
         state.notifications.forEach((n) => (n.read = true));
       },
+      async delete(id) {
+        await delay(150);
+        state.notifications = state.notifications.filter((x) => x.id !== id);
+      },
       async preferences() {
         await delay();
         return clone(state.prefs);
@@ -809,6 +814,11 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         state.prefs = { ...prefs };
         return clone(state.prefs);
       },
+      async vapidPublicKey() {
+        return 'mock-vapid-public-key';
+      },
+      async subscribePush() {},
+      async unsubscribePush() {},
     },
 
     stories: {
