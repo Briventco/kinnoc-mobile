@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Camera, ChevronDown, Globe, ImageIcon, Link2, MessageSquareText, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError } from '@/api/errors';
@@ -11,6 +11,7 @@ import { Avatar, CommunityAvatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
+import { KeyboardAvoidingView } from '@/components/KeyboardAvoidingView';
 import { ActionSheet, ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { Banner, CenteredSpinner, ErrorState } from '@/components/States';

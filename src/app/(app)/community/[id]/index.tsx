@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronDown, ChevronRight, EllipsisVertical, Lock, Pin, Reply, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { FlatList, Modal, Platform, Pressable as RNPressable, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
@@ -10,6 +10,7 @@ import { CommunityAvatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
+import { KeyboardAvoidingView } from '@/components/KeyboardAvoidingView';
 import { ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { CenteredSpinner, EmptyState, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
@@ -36,7 +37,7 @@ import { flatten } from '@/lib/cache';
 import { formatDateSeparator, isSameDay, plural, uid } from '@/lib/format';
 import { keys, queryClient } from '@/lib/query';
 import { api, realtime } from '@/services';
-import { KEYBOARD_BEHAVIOR } from '@/lib/useKeyboardVisible';
+import { KEYBOARD_BEHAVIOR, useKeyboardHeight } from '@/lib/useKeyboardVisible';
 import { colors, gutter, radius, shadow, space } from '@/theme';
 
 const GROUP_GAP_MS = 3 * 60_000;
@@ -242,6 +243,17 @@ function Conversation({
       return () => clearTimeout(t);
     }
   }, [targetMessageId, rows]);
+
+  // When virtual keyboard opens on mobile web, keep latest messages visible
+  const keyboardHeight = useKeyboardHeight();
+  useEffect(() => {
+    if (keyboardHeight > 0 && atLatest) {
+      const t = setTimeout(() => {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }, 50);
+      return () => clearTimeout(t);
+    }
+  }, [keyboardHeight, atLatest]);
 
   const sendMessage = (text: string, attachmentUris: string[]) => {
     send.mutate(
