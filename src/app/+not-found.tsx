@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
-import { normalizeNotificationTarget } from '@/features/notifications/navigation';
+import { normalizeDeepLinkTarget } from '@/lib/deepLinks';
 import { colors, space } from '@/theme';
 
 export default function NotFound() {
@@ -16,7 +16,7 @@ export default function NotFound() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       currentPath = window.location.pathname + window.location.search;
     }
-    const normalized = normalizeNotificationTarget(currentPath);
+    const normalized = normalizeDeepLinkTarget(currentPath);
     if (normalized && normalized !== currentPath && normalized !== '/') {
       const timer = setTimeout(() => {
         router.replace(normalized as Href);

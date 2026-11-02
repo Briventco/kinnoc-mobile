@@ -4,6 +4,7 @@ import { memo, useEffect, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 import type { DeliveryStatus, Message } from '@/api/types';
+import { AutolinkText } from '@/components/AutolinkText';
 import { Avatar } from '@/components/Avatar';
 import { Emoji } from '@/components/Emoji';
 import { Pressable } from '@/components/Pressable';
@@ -68,9 +69,9 @@ export const MessageBubble = memo(function MessageBubble({ message, status, show
         </View>
       ) : null}
       {message.text && !deleted ? (
-        <Text variant="message" color={mine ? 'onPrimary' : 'text'} selectable>
+        <AutolinkText variant="message" color={mine ? 'onPrimary' : 'text'} inverted={mine} selectable>
           {message.text}
-        </Text>
+        </AutolinkText>
       ) : null}
       {message.attachments.map((a) => (
         <Image

@@ -10,17 +10,37 @@
     "backgroundColor": "#FFFFFF",
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.brivent.kinnoc",
+      "associatedDomains": [
+        "applinks:web.kinnoc.app",
+        "applinks:kinnoc.app"
+      ],
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Kinnoc uses your photos so you can share images in posts and community conversations.",
         "NSCameraUsageDescription": "Kinnoc uses the camera so you can take photos to share in posts and community conversations."
       }
     },
     "android": {
+      "package": "com.brivent.kinnoc",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "web.kinnoc.app" },
+            { "scheme": "https", "host": "kinnoc.app" }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "output": "single",

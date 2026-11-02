@@ -16,7 +16,7 @@ import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { env } from '@/config/env';
-import { normalizeNotificationTarget } from '@/features/notifications/navigation';
+import { normalizeDeepLinkTarget } from '@/lib/deepLinks';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/OnboardingProvider';
 import {
   consumePendingDestinationAsync,
@@ -63,7 +63,7 @@ export default function RootLayout() {
 
 function extractTarget(rawUrl: string): string | null {
   if (!rawUrl) return null;
-  const normalized = normalizeNotificationTarget(rawUrl);
+  const normalized = normalizeDeepLinkTarget(rawUrl);
   if (
     normalized &&
     normalized !== '/' &&

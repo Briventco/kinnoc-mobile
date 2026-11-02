@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Bell, BellOff, EyeOff, Globe, Inbox, Lock, MailPlus, MessageSquareText, Newspaper, Pencil, Pin, Users } from 'lucide-react-native';
+import { Bell, BellOff, EyeOff, Globe, Inbox, Lock, MailPlus, MessageSquareText, Newspaper, Pencil, Pin, Share2, Users } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ import { useCommunity, useInbox, useInboxActions, useLeaveCommunity } from '@/fe
 import { MembershipActions } from '@/features/communities/MembershipActions';
 import { SettingRow } from '@/features/settings/SettingRow';
 import { plural } from '@/lib/format';
+import { shareCommunity } from '@/lib/shareLinks';
 import { api } from '@/services';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -154,6 +155,13 @@ export default function CommunityInfo() {
               <SettingRow icon={Users} label="Members" detail={plural(c.memberCount, 'member')} onPress={() => push('/community/[id]/members')} />
             </>
           ) : null}
+          <Hairline />
+          <SettingRow
+            icon={Share2}
+            label="Share community"
+            detail="Share a link to this community"
+            onPress={() => void shareCommunity({ id: c.id, name: c.name, description: c.description })}
+          />
           {manager ? (
             <>
               <Hairline />

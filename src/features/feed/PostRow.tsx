@@ -2,11 +2,12 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { Bookmark, Ellipsis, Heart, Link2, MessageCircle, Pencil, Send, Share2, Trash2 } from 'lucide-react-native';
 import { memo, useState } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { describeError } from '@/api/errors';
 import type { MediaAsset, Post } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
+import { AutolinkText } from '@/components/AutolinkText';
 import { IconButton } from '@/components/IconButton';
 import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
@@ -18,6 +19,7 @@ import { ProfileLink } from '@/features/profile/ProfileLink';
 import { plural } from '@/lib/format';
 import { useRelativeTime } from '@/lib/useRelativeTime';
 import { openExternal } from '@/lib/links';
+import { sharePost } from '@/lib/shareLinks';
 import { api } from '@/services';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -55,8 +57,7 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
     );
 
   const share = () => {
-    const where = post.community ? ` in ${post.community.name}` : '';
-    void Share.share({ message: `${post.author.displayName}${where} on Kinnoc: ${post.text}` });
+    void sharePost(post);
   };
 
   const actions: SheetAction[] = [
@@ -108,13 +109,13 @@ export const PostRow = memo(function PostRow({ post, detail, canModerate }: Post
 
       {post.text ? (
         <Pressable onPress={open} disabled={detail} pressedOpacity={0.85} accessibilityHint={detail ? undefined : 'Opens the post and replies'}>
-          <Text
+          <AutolinkText
             variant="post"
             style={styles.postText}
             numberOfLines={expanded ? undefined : 6}
           >
             {post.text}
-          </Text>
+          </AutolinkText>
         </Pressable>
       ) : null}
       {truncated && !expanded ? (

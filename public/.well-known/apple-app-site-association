@@ -1,0 +1,25 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.brivent.kinnoc",
+        "paths": [
+          "/community/*",
+          "/post/*",
+          "/profile/*",
+          "/events/*",
+          "/discover/*",
+          "/notifications",
+          "/invite/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "TEAM_ID.com.brivent.kinnoc"
+    ]
+  }
+}
+

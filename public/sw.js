@@ -30,6 +30,12 @@ function normalizeTargetUrl(url) {
     });
     // /feed?postId=:id -> /post/:id
     path = path.replace(/^\/feed\?.*postId=([^&#]+)/, '/post/$1');
+    // /event/:slug -> /events/:slug
+    path = path.replace(/^\/event\/([^/?#]+)(?:\?(.*))?$/, '/events/$1');
+    // /invitation/:code -> /invite/:code
+    path = path.replace(/^\/invitation\/([^/?#]+)(?:\?(.*))?$/, '/invite/$1');
+    // /u/:username or /user/:username -> /profile/:username
+    path = path.replace(/^\/(?:u|user)\/([^/?#]+)(?:\?(.*))?$/, '/profile/$1');
     if (path === '/feed') path = '/';
     if (path.startsWith('/settings/verification')) path = '/settings';
     return path;
