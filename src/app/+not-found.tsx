@@ -1,12 +1,30 @@
-import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { router, usePathname, type Href } from 'expo-router';
+import { useEffect } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/Button';
 import { Text } from '@/components/Text';
+import { normalizeNotificationTarget } from '@/features/notifications/navigation';
 import { colors, space } from '@/theme';
 
 export default function NotFound() {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    let currentPath = pathname;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      currentPath = window.location.pathname + window.location.search;
+    }
+    const normalized = normalizeNotificationTarget(currentPath);
+    if (normalized && normalized !== currentPath && normalized !== '/') {
+      const timer = setTimeout(() => {
+        router.replace(normalized as Href);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [pathname]);
+
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.content}>

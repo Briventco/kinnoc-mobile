@@ -12,6 +12,7 @@ import { DateStamp } from '@/features/discover/DiscoverRows';
 import { EmptyState, ErrorState, ListFooter, SkeletonList } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications } from '@/features/notifications/hooks';
+import { normalizeNotificationTarget } from '@/features/notifications/navigation';
 import { flatten } from '@/lib/cache';
 import { formatAgeLong } from '@/lib/format';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
@@ -133,7 +134,8 @@ export default function NotificationsScreen() {
 
   const open = (n: AppNotification) => {
     if (!n.read) markRead.mutate(n.id);
-    if (n.target) router.push(n.target as Href);
+    const target = normalizeNotificationTarget(n.target);
+    if (target) router.push(target as Href);
   };
 
   return (

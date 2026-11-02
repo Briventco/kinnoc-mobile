@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import * as Linking from 'expo-linking';
+import { router, Stack, type Href } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
@@ -15,7 +16,13 @@ import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { env } from '@/config/env';
+import { normalizeNotificationTarget } from '@/features/notifications/navigation';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/OnboardingProvider';
+import {
+  consumePendingDestinationAsync,
+  initPendingDestination,
+  setPendingDestination,
+} from '@/lib/pendingNavigation';
 import { queryClient } from '@/lib/query';
 import { colors, fontAssets, gutter, space } from '@/theme';
 
@@ -54,12 +61,72 @@ export default function RootLayout() {
   );
 }
 
+function extractTarget(rawUrl: string): string | null {
+  if (!rawUrl) return null;
+  const normalized = normalizeNotificationTarget(rawUrl);
+  if (
+    normalized &&
+    normalized !== '/' &&
+    !normalized.startsWith('/(auth)') &&
+    !normalized.startsWith('/welcome') &&
+    !normalized.startsWith('/sign-in') &&
+    !normalized.startsWith('/sign-up') &&
+    !normalized.startsWith('/onboarding')
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
 function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   const { status } = useAuth();
   const { completed } = useOnboarding();
   const toast = useToast();
   const [splashHidden, setSplashHidden] = useState(false);
   const ready = fontsReady && status !== 'restoring' && completed !== null;
+
+  // Initialize persistent destination on cold start
+  useEffect(() => {
+    void initPendingDestination();
+  }, []);
+
+  // Deep linking and notification navigation handling (cold and warm starts)
+  useEffect(() => {
+    void Linking.getInitialURL().then((initialUrl) => {
+      if (initialUrl) {
+        const target = extractTarget(initialUrl);
+        if (target && status !== 'signedIn') {
+          setPendingDestination(target);
+        }
+      }
+    });
+
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      const target = extractTarget(url);
+      if (!target) return;
+      if (status === 'signedIn') {
+        router.push(target as Href);
+      } else {
+        setPendingDestination(target);
+      }
+    });
+
+    return () => sub.remove();
+  }, [status]);
+
+  // Navigate to preserved destination after authentication completes
+  useEffect(() => {
+    if (ready && status === 'signedIn') {
+      void consumePendingDestinationAsync().then((dest) => {
+        if (dest) {
+          const t = setTimeout(() => {
+            router.replace(dest as Href);
+          }, 50);
+          return () => clearTimeout(t);
+        }
+      });
+    }
+  }, [ready, status]);
 
   useEffect(() => {
     if (!ready) return;
