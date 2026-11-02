@@ -34,6 +34,51 @@ describe('createHttpApi', () => {
     expect(c.membership).toBe('member');
   });
 
+  it('resolves shared invitation codes on /invites and accepts them there', async () => {
+    // Real codes are `<base64url payload>.<signature>`: only URL-safe characters, so they pass through unchanged.
+    const code = 'eyJ2IjoxfQ.sig_-Abc123';
+    const { client, calls } = fakeClient((method) =>
+      method === 'GET'
+        ? {
+            code,
+            status: 'INVITED',
+            expiresAt: '2026-11-17T00:00:00.000Z',
+            community: {
+              id: 'c1',
+              name: 'Alpha Testers',
+              slug: 'alpha-testers',
+              description: 'Early access',
+              avatarUrl: null,
+              coverUrl: 'https://x/cover.jpg',
+              visibility: 'PRIVATE',
+            },
+            invitedBy: { id: 'u-owner', username: 'owner', displayName: 'Owner', avatarUrl: null },
+            canonicalUrl: `/invite/${code}`,
+          }
+        : { status: 'ACTIVE', role: 'MEMBER', joinedAt: 'x' },
+    );
+    const api = createHttpApi(client, options);
+    const preview = await api.invitations.resolve(code);
+    await api.invitations.accept(code);
+    expect(calls.map(([m, p]) => `${m} ${p}`)).toEqual([`GET /invites/${code}`, `POST /invites/${code}/accept`]);
+    expect(preview).toEqual({
+      code,
+      expiresAt: '2026-11-17T00:00:00.000Z',
+      community: {
+        id: 'c1',
+        slug: 'alpha-testers',
+        name: 'Alpha Testers',
+        monogram: 'AT',
+        description: 'Early access',
+        photoUrl: null,
+        coverUrl: 'https://x/cover.jpg',
+        visibility: 'private',
+      },
+      // The inviter's user ID is not kept.
+      invitedBy: { username: 'owner', displayName: 'Owner', avatarUrl: null },
+    });
+  });
+
   it('only searches with two or more characters and passes the category', async () => {
     const { client, calls } = fakeClient(() => page([apiCommunity()]));
     const api = createHttpApi(client, options);

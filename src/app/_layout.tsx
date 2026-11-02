@@ -4,7 +4,7 @@ import * as Linking from 'expo-linking';
 import { router, Stack, type Href } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -90,27 +90,28 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     void initPendingDestination();
   }, []);
 
-  // Deep linking and notification navigation handling (cold and warm starts)
+  // Universal Links, App Links and kinnoc:// links. Expo Router itself opens the linked screen.
+  // On a cold start the launch link is also kept as the pending destination, which opens once the
+  // session is restored (and, signed out, after signing in), so it survives the splash and the
+  // sign-in guards. It is read once: the launch URL stays the same for the life of the process,
+  // and reading it again on a later sign-out would send them back to an old link.
+  const initialUrlRead = useRef(false);
   useEffect(() => {
+    if (initialUrlRead.current) return;
+    initialUrlRead.current = true;
     void Linking.getInitialURL().then((initialUrl) => {
-      if (initialUrl) {
-        const target = extractTarget(initialUrl);
-        if (target && status !== 'signedIn') {
-          setPendingDestination(target);
-        }
-      }
+      const target = initialUrl ? extractTarget(initialUrl) : null;
+      if (target) setPendingDestination(target);
     });
+  }, []);
 
+  // Links arriving while the app is open. Signed in, Expo Router has already navigated (pushing
+  // here too opened every link twice); signed out, remember the target for after sign-in.
+  useEffect(() => {
     const sub = Linking.addEventListener('url', ({ url }) => {
       const target = extractTarget(url);
-      if (!target) return;
-      if (status === 'signedIn') {
-        router.push(target as Href);
-      } else {
-        setPendingDestination(target);
-      }
+      if (target && status !== 'signedIn') setPendingDestination(target);
     });
-
     return () => sub.remove();
   }, [status]);
 

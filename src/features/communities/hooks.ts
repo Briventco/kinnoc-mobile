@@ -116,6 +116,27 @@ export function useJoinCommunity() {
   });
 }
 
+/** A shared invitation link's preview. Works signed out. */
+export function useInvitation(code: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.invitation(code),
+    queryFn: () => api.invitations.resolve(code),
+    enabled,
+    // Invalid, revoked, expired and already-accepted links stay that way; only retry failures to connect.
+    retry: (count, error) => !(error instanceof ApiError && error.status !== null && error.status < 500) && count < 2,
+  });
+}
+
+export function useAcceptInvitation(code: string) {
+  return useMutation({
+    mutationFn: (communityId: string) => api.invitations.accept(code).then(() => communityId),
+    onSuccess: (communityId) => {
+      queryClient.removeQueries({ queryKey: keys.invitation(code) });
+      invalidateMembership(communityId);
+    },
+  });
+}
+
 export function useLeaveCommunity() {
   return useMutation({
     mutationFn: (id: string) => api.communities.leave(id),
