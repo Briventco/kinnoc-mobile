@@ -28,6 +28,7 @@ export function statusForSeq(seq: number, receipts: Receipts | null | undefined)
  * copy). Other people's messages never show a status.
  */
 export function deliveryStatus(message: Message, receipts: Receipts | null | undefined): DeliveryStatus {
-  if (!message.isMine || message.seq === null || message.status === 'sending' || message.status === 'failed') return message.status;
-  return receipts ? statusForSeq(message.seq, receipts) : message.status;
+  if (!message.isMine) return message.status;
+  if (message.seq === null) return message.status === 'failed' ? 'failed' : 'sending';
+  return receipts ? statusForSeq(message.seq, receipts) : 'sent';
 }

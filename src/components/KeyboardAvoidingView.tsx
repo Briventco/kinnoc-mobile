@@ -20,7 +20,9 @@ export function KeyboardAvoidingView({ style, behavior = KEYBOARD_BEHAVIOR, chil
   const keyboardHeight = useKeyboardHeight();
 
   const webStyle: StyleProp<ViewStyle> =
-    Platform.OS === 'web' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : undefined;
+    Platform.OS === 'web' && keyboardHeight > 0
+      ? ({ paddingBottom: keyboardHeight, boxSizing: 'border-box' } as ViewStyle)
+      : undefined;
 
   return (
     <RNKeyboardAvoidingView

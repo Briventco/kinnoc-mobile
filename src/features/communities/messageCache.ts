@@ -5,8 +5,12 @@ import type { Message, Page } from '@/api/types';
 /** Conversation history as cached: pages newest first, each page newest first. */
 export type MessagePages = InfiniteData<Page<Message>, string | null>;
 
-const same = (a: Message, b: Message) =>
-  a.id === b.id || (!!a.clientId && a.clientId === b.clientId && a.isMine === b.isMine) || (a.seq !== null && a.seq === b.seq);
+export const same = (a: Message, b: Message) =>
+  a.id === b.id ||
+  (Boolean(a.clientId && b.clientId) && a.clientId === b.clientId) ||
+  (Boolean(a.clientId) && a.clientId === b.id) ||
+  (Boolean(b.clientId) && a.id === b.clientId) ||
+  (a.seq !== null && b.seq !== null && a.seq === b.seq);
 
 /** Unsent messages (no `seq`) first, then by `seq`, newest first. */
 const newestFirst = (a: Message, b: Message) => {
@@ -17,10 +21,25 @@ const newestFirst = (a: Message, b: Message) => {
   return b.seq - a.seq;
 };
 
-/** A deleted message stays deleted, even if an older copy of it arrives later. */
+/**
+ * Reconciles an existing message with an incoming update. Preserves client state
+ * (isMine, pending attachments) and transitions optimistic messages to 'sent' when
+ * confirmed by the server (via seq number or confirmed server ID).
+ */
 function reconcile(current: Message, incoming: Message): Message {
   if (current.deletedAt && !incoming.deletedAt) return current;
-  return incoming;
+  const isMine = current.isMine || incoming.isMine;
+  const status =
+    incoming.seq !== null || (incoming.id && incoming.id !== current.clientId && incoming.status === 'sent')
+      ? 'sent'
+      : (incoming.status ?? current.status ?? 'sent');
+  return {
+    ...current,
+    ...incoming,
+    isMine,
+    status,
+    attachments: incoming.attachments && incoming.attachments.length > 0 ? incoming.attachments : current.attachments,
+  };
 }
 
 /**

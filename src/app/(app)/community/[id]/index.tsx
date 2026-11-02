@@ -341,7 +341,7 @@ function Conversation({
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={KEYBOARD_BEHAVIOR}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + (community.pinned ? 104 : 56) : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + (community.pinned ? 108 : 60) : 0}
       >
 
       {messages.isPending ? (

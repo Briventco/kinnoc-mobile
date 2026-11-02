@@ -1,5 +1,5 @@
 import { skipToken, useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import { ApiError } from '@/api/errors';
 import type { ConversationEvent } from '@/api/realtime';
@@ -350,19 +350,12 @@ export interface OutgoingMessage {
 /**
  * Sends with an optimistic bubble: "Sending" → "Sent", or "Not sent. Tap to retry".
  * Retrying reuses the same clientId so the server returns the original instead of a duplicate.
+ * Appends the message to the cache synchronously for instant UI feedback and sends in the
+ * background without blocking concurrent outgoing messages.
  */
 export function useSendMessage(communityId: string, me: Person | undefined) {
-  return useMutation({
-    mutationFn: (out: OutgoingMessage) =>
-      api.messages.send({
-        communityId,
-        clientId: out.clientId,
-        text: out.text,
-        replyToId: out.replyTo?.id ?? null,
-        attachmentUris: out.attachmentUris,
-      }),
-    onMutate: async (out) => {
-      await queryClient.cancelQueries({ queryKey: keys.messages(communityId) });
+  const mutate = useCallback(
+    (out: OutgoingMessage, options?: { onError?: (error: unknown) => void }) => {
       const pending: Message = {
         id: out.clientId,
         clientId: out.clientId,
@@ -386,16 +379,38 @@ export function useSendMessage(communityId: string, me: Person | undefined) {
           [pending],
         ),
       );
+
+      // Asynchronously send in the background without blocking concurrent sends
+      void (async () => {
+        try {
+          const res = await api.messages.send({
+            communityId,
+            clientId: out.clientId,
+            text: out.text,
+            replyToId: out.replyTo?.id ?? null,
+            attachmentUris: out.attachmentUris,
+          });
+          const confirmed: Message = {
+            ...res,
+            clientId: res.clientId ?? out.clientId,
+            isMine: true,
+            status: 'sent',
+          };
+          merge(communityId, [confirmed]);
+          void queryClient.invalidateQueries({ queryKey: keys.inbox });
+        } catch (error) {
+          queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) =>
+            patchMessage(d, out.clientId, (m) => ({ ...m, status: 'failed' })),
+          );
+          if (lostAccess(error)) void queryClient.invalidateQueries({ queryKey: keys.community(communityId) });
+          options?.onError?.(error);
+        }
+      })();
     },
-    onSuccess: (message) => {
-      merge(communityId, [message]);
-      void queryClient.invalidateQueries({ queryKey: keys.inbox });
-    },
-    onError: (error, out) => {
-      queryClient.setQueryData<MessagePages>(keys.messages(communityId), (d) => patchMessage(d, out.clientId, (m) => ({ ...m, status: 'failed' })));
-      if (lostAccess(error)) void queryClient.invalidateQueries({ queryKey: keys.community(communityId) });
-    },
-  });
+    [communityId, me],
+  );
+
+  return useMemo(() => ({ mutate }), [mutate]);
 }
 
 /** Sender, owner or moderator. The bubble shows "Message deleted" at once and is restored on failure. */

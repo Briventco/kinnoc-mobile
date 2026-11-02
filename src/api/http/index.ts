@@ -230,12 +230,18 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
             query: cursor ? { cursor, limit: 50 } : { after: seq, limit: 50 },
           }),
         ),
-      send: async ({ communityId, clientId, text, replyToId }) =>
-        toMessage(
-          await client.post<ApiMessage>(`/communities/${enc(communityId)}/messages`, {
-            body: { text, clientId, ...(replyToId ? { replyToId } : {}) },
-          }),
-        ),
+      send: async ({ communityId, clientId, text, replyToId }) => {
+        const res = await client.post<ApiMessage>(`/communities/${enc(communityId)}/messages`, {
+          body: { text, clientId, ...(replyToId ? { replyToId } : {}) },
+        });
+        const msg = toMessage(res);
+        return {
+          ...msg,
+          clientId: msg.clientId ?? clientId,
+          isMine: true,
+          status: 'sent',
+        };
+      },
       remove: (communityId, messageId) => client.delete(`/communities/${enc(communityId)}/messages/${enc(messageId)}`),
       react: notAvailable('Reactions'),
     },
