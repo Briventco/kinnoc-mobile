@@ -12,7 +12,7 @@ import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
 import { ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
-import { CenteredSpinner, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
+import { CenteredSpinner, EmptyState, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
 import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { ChatComposer } from '@/features/communities/ChatComposer';
@@ -45,7 +45,7 @@ const NEAR_LATEST_PX = 120;
 const REACTIONS = ['👍', '🙌', '🔥', '❤️', '😂', '🎉'];
 
 export default function ConversationScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, messageId } = useLocalSearchParams<{ id: string; messageId?: string }>();
   const community = useCommunity(id);
   const insets = useSafeAreaInsets();
 
@@ -90,10 +90,27 @@ export default function ConversationScreen() {
     );
   }
   if (community.isError) {
+    const notFound =
+      community.error instanceof ApiError &&
+      (community.error.code === 'not_found' || community.error.serverCode === 'COMMUNITY_NOT_FOUND');
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
-        {header()}
-        <ErrorState error={community.error} onRetry={() => community.refetch()} />
+        <ScreenHeader
+          title="Community"
+          onBack={() => (router.canGoBack() ? router.back() : router.navigate('/communities'))}
+        />
+        <EmptyState
+          title={notFound ? 'Community not found' : "Couldn't load community"}
+          body={
+            notFound
+              ? 'This community may have been deleted, or the link is invalid.'
+              : describeError(community.error)
+          }
+          action={{
+            label: notFound ? 'Back to Communities' : 'Retry',
+            onPress: () => (notFound ? router.navigate('/communities') : community.refetch()),
+          }}
+        />
       </View>
     );
   }
@@ -105,7 +122,7 @@ export default function ConversationScreen() {
       </View>
     );
   }
-  return <Conversation community={community.data} renderHeader={header} />;
+  return <Conversation community={community.data} renderHeader={header} targetMessageId={messageId} />;
 }
 
 /** Non-members never receive messages; they see what the community is and how to get in. */
@@ -131,7 +148,15 @@ const senderKey = (m: Message) => (m.isMine ? 'me' : (m.sender?.username ?? 'for
 /** Stable across the optimistic bubble and the server's copy of your own message. */
 const messageKey = (m: Message) => m.clientId ?? m.id;
 
-function Conversation({ community, renderHeader }: { community: Community; renderHeader: (subtitle?: string) => React.ReactNode }) {
+function Conversation({
+  community,
+  renderHeader,
+  targetMessageId,
+}: {
+  community: Community;
+  renderHeader: (subtitle?: string) => React.ReactNode;
+  targetMessageId?: string;
+}) {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const me = useMe();
@@ -201,6 +226,22 @@ function Conversation({ community, renderHeader }: { community: Community; rende
     });
     return out;
   }, [list]);
+
+  // Scroll to targeted message from deep link / notification if present
+  useEffect(() => {
+    if (!targetMessageId || !rows.length) return;
+    const index = rows.findIndex((r) => r.type === 'message' && r.message.id === targetMessageId);
+    if (index >= 0) {
+      const t = setTimeout(() => {
+        try {
+          listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+        } catch {
+          // List layout may still be initializing
+        }
+      }, 400);
+      return () => clearTimeout(t);
+    }
+  }, [targetMessageId, rows]);
 
   const sendMessage = (text: string, attachmentUris: string[]) => {
     send.mutate(
