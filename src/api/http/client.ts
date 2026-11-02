@@ -63,6 +63,7 @@ export function toApiError(status: number, payload: unknown): ApiError {
     fieldErrors(err.error?.details),
     err.error?.code ?? null,
     err.error?.requestId ?? null,
+    err.error?.details,
   );
 }
 

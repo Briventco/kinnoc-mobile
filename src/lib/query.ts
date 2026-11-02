@@ -40,6 +40,7 @@ export const keys = {
   communityMembers: (id: string) => ['community', id, 'members'] as const,
   joinRequests: (id: string) => ['community', id, 'join-requests'] as const,
   invitations: (id: string) => ['community', id, 'invitations'] as const,
+  invitation: (code: string) => ['invitation', code] as const,
   messages: (communityId: string) => ['messages', communityId] as const,
   receipts: (communityId: string) => ['receipts', communityId] as const,
   communityPosts: (ref: string) => ['feed', 'community', ref] as const,

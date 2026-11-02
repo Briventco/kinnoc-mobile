@@ -9,6 +9,7 @@ import {
   type ApiEvent,
   type ApiInboxEntry,
   type ApiInvitation,
+  type ApiInvitationPreview,
   type ApiJoinRequest,
   type ApiMember,
   type ApiMessage,
@@ -31,6 +32,7 @@ import {
   toEventPage,
   toInboxEntry,
   toInvitation,
+  toInvitationPreview,
   toJoinRequest,
   toMember,
   toMessage,
@@ -218,6 +220,13 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
           if (isApiError(error, 'NOT_FOUND')) throw unsupported('Their communities');
           throw error;
         }
+      },
+    },
+    invitations: {
+      // Works signed out: the link shows what it invites to before anyone signs in.
+      resolve: async (code) => toInvitationPreview(await client.get<ApiInvitationPreview>(`/invites/${enc(code)}`)),
+      accept: async (code) => {
+        await client.post(`/invites/${enc(code)}/accept`);
       },
     },
     messages: {
