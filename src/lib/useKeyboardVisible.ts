@@ -6,18 +6,30 @@ import { space } from '@/theme';
 /**
  * `KeyboardAvoidingView` behaviour for every screen with a text field. Android draws edge to
  * edge (always on since SDK 54), which stops `adjustResize` from shrinking the window, so Android
- * needs padding too; without it the keyboard covers the field. On Web, avoid artificial padding
- * since browsers (and our responsive container) handle layout viewport sizing directly.
+ * needs padding too; without it the keyboard covers the field. On Web, standard react-native-web
+ * KeyboardAvoidingView is a no-op; we handle web padding dynamically using useKeyboardHeight.
  */
 export const KEYBOARD_BEHAVIOR =
   Platform.OS === 'ios' ? ('padding' as const) : Platform.OS === 'android' ? ('padding' as const) : undefined;
 
-export function useKeyboardVisible() {
-  const [visible, setVisible] = useState(false);
+/**
+ * Returns the active keyboard height in pixels across both native platforms and mobile web.
+ * On mobile web (iOS Safari, Android Chrome), uses window.visualViewport to detect the exact
+ * height occupied by the virtual keyboard so the input bar can be positioned directly above it.
+ */
+export function useKeyboardHeight() {
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
   useEffect(() => {
     if (Platform.OS !== 'web') {
-      const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setVisible(true));
-      const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setVisible(false));
+      const show = Keyboard.addListener(
+        Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+        (e) => setKeyboardHeight(e.endCoordinates.height),
+      );
+      const hide = Keyboard.addListener(
+        Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+        () => setKeyboardHeight(0),
+      );
       return () => {
         show.remove();
         hide.remove();
@@ -26,18 +38,16 @@ export function useKeyboardVisible() {
 
     if (typeof window === 'undefined') return;
 
-    const checkWebKeyboard = () => {
-      const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
-      const isInputFocused =
-        activeEl instanceof HTMLInputElement ||
-        activeEl instanceof HTMLTextAreaElement ||
-        (activeEl instanceof HTMLElement && activeEl.isContentEditable);
-
-      // On mobile browsers, visualViewport shrinks significantly when the virtual keyboard is open.
-      const isViewportShrunk =
-        window.visualViewport != null && window.innerHeight - window.visualViewport.height > 100;
-
-      setVisible(Boolean(isInputFocused || isViewportShrunk));
+    const measureWebKeyboard = () => {
+      if (!window.visualViewport) {
+        setKeyboardHeight(0);
+        return;
+      }
+      const vv = window.visualViewport;
+      // On mobile browsers, visualViewport shrinks when virtual keyboard is open.
+      const diff = window.innerHeight - vv.height - vv.offsetTop;
+      // Only treat significant diffs (> 80px) as keyboard to avoid false positives on URL bar resizing
+      setKeyboardHeight(diff > 80 ? Math.round(diff) : 0);
     };
 
     const resetScroll = () => {
@@ -47,31 +57,41 @@ export function useKeyboardVisible() {
     };
 
     const handleFocusIn = () => {
-      checkWebKeyboard();
+      measureWebKeyboard();
       resetScroll();
       requestAnimationFrame(resetScroll);
     };
 
-    checkWebKeyboard();
+    measureWebKeyboard();
 
     window.addEventListener('focusin', handleFocusIn);
-    window.addEventListener('focusout', checkWebKeyboard);
+    window.addEventListener('focusout', () => {
+      setTimeout(measureWebKeyboard, 50);
+    });
     window.addEventListener('scroll', resetScroll, { passive: true });
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', checkWebKeyboard);
+      window.visualViewport.addEventListener('resize', measureWebKeyboard);
+      window.visualViewport.addEventListener('scroll', measureWebKeyboard);
     }
 
     return () => {
       window.removeEventListener('focusin', handleFocusIn);
-      window.removeEventListener('focusout', checkWebKeyboard);
+      window.removeEventListener('focusout', measureWebKeyboard);
       window.removeEventListener('scroll', resetScroll);
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', checkWebKeyboard);
+        window.visualViewport.removeEventListener('resize', measureWebKeyboard);
+        window.visualViewport.removeEventListener('scroll', measureWebKeyboard);
       }
     };
   }, []);
-  return visible;
+
+  return keyboardHeight;
+}
+
+export function useKeyboardVisible() {
+  const height = useKeyboardHeight();
+  return height > 0;
 }
 
 /**

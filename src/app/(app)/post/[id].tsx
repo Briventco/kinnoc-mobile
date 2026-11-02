@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 import { ArrowUp, Ellipsis, Pencil, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Platform, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
@@ -9,6 +9,7 @@ import type { Comment, Post } from '@/api/types';
 import { Avatar } from '@/components/Avatar';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
+import { KeyboardAvoidingView } from '@/components/KeyboardAvoidingView';
 import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { CenteredSpinner, ErrorState, Hairline, ListFooter } from '@/components/States';
@@ -354,6 +355,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body400,
     fontSize: 16,
     color: colors.text,
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   send: { width: 40, height: 40, margin: 2, borderRadius: radius.full, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   sendBusy: { opacity: 0.5 },

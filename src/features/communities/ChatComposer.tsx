@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { ArrowUp, Camera, ImageIcon, Plus, Reply, Smile, X } from 'lucide-react-native';
 import { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
+import { Platform, ScrollView, StyleSheet, TextInput, View, type TextInputInstance } from 'react-native';
 
 import type { Message } from '@/api/types';
 import { Emoji } from '@/components/Emoji';
@@ -201,6 +201,12 @@ const styles = StyleSheet.create({
     maxHeight: 21 * 5 + 20,
     paddingTop: 11,
     paddingBottom: 11,
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineWidth: 0,
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
   send: {
     width: 40,
