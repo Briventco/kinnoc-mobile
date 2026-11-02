@@ -11,6 +11,7 @@ import { Emoji } from '@/components/Emoji';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
 import { KeyboardAvoidingView } from '@/components/KeyboardAvoidingView';
+import { MetaHead } from '@/components/MetaHead';
 import { ConfirmDialog } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { CenteredSpinner, EmptyState, ErrorState, ListFooter, MessageSkeleton } from '@/components/States';
@@ -118,12 +119,28 @@ export default function ConversationScreen() {
   if (community.data.membership !== 'member') {
     return (
       <View style={[styles.root, { paddingTop: insets.top }]}>
+        <MetaHead
+          title={community.data.name}
+          description={community.data.description}
+          image={community.data.photoUrl}
+          url={`https://web.kinnoc.app/community/${id}`}
+        />
         {header()}
         <JoinGate community={community.data} />
       </View>
     );
   }
-  return <Conversation community={community.data} renderHeader={header} targetMessageId={messageId} />;
+  return (
+    <>
+      <MetaHead
+        title={community.data.name}
+        description={community.data.description}
+        image={community.data.photoUrl}
+        url={`https://web.kinnoc.app/community/${id}`}
+      />
+      <Conversation community={community.data} renderHeader={header} targetMessageId={messageId} />
+    </>
+  );
 }
 
 /** Non-members never receive messages; they see what the community is and how to get in. */

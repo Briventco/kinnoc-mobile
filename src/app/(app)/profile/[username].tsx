@@ -1,12 +1,14 @@
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { ChevronLeft, Share } from 'lucide-react-native';
 import { useState } from 'react';
-import { FlatList, Platform, RefreshControl, Share as RNShare, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ApiError } from '@/api/errors';
+import { AutolinkText } from '@/components/AutolinkText';
 import { Avatar } from '@/components/Avatar';
 import { IconButton } from '@/components/IconButton';
+import { MetaHead } from '@/components/MetaHead';
 import { Pressable } from '@/components/Pressable';
 import { PullIndicator } from '@/components/PullIndicator';
 import { EmptyState, ErrorState, Hairline, ListFooter, SkeletonList } from '@/components/States';
@@ -19,12 +21,10 @@ import { verificationDetail } from '@/features/verification/labels';
 import { VerificationSheet } from '@/features/verification/VerificationSheet';
 import { VerifiedName } from '@/features/verification/VerifiedBadge';
 import { flatten } from '@/lib/cache';
+import { shareProfile } from '@/lib/shareLinks';
 import { usePullToRefresh } from '@/lib/usePullToRefresh';
 import { useWebPullToRefresh } from '@/lib/useWebPullToRefresh';
 import { colors, gutter, space, type } from '@/theme';
-
-/** Where shared profile links point outside the web app itself. */
-const WEB_APP_URL = 'https://web.kinnoc.app';
 
 /**
  * Someone's public profile at `/profile/<username>`: what the API lets the viewer see (name,
@@ -43,9 +43,7 @@ export default function PublicProfileScreen() {
   if (me.data && username.toLowerCase() === me.data.username.toLowerCase()) return <Redirect href="/profile" />;
 
   const share = () => {
-    const link = Platform.OS === 'web' && typeof window !== 'undefined' ? `${window.location.origin}/profile/${username}` : `${WEB_APP_URL}/profile/${username}`;
-    const name = profile.data?.displayName;
-    void RNShare.share({ message: name ? `${name} (@${username}) on Kinnoc: ${link}` : link });
+    void shareProfile({ username, displayName: profile.data?.displayName });
   };
 
   const topBar = (
@@ -88,7 +86,7 @@ export default function PublicProfileScreen() {
 
       {p.bio ? (
         <View style={styles.block}>
-          <Text variant="post">{p.bio}</Text>
+          <AutolinkText variant="post">{p.bio}</AutolinkText>
         </View>
       ) : null}
 
@@ -122,6 +120,12 @@ export default function PublicProfileScreen() {
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
+      <MetaHead
+        title={p ? `${p.displayName} (@${p.username})` : `@${username}`}
+        description={p?.bio || `View ${p?.displayName ?? username}'s profile and communities on Kinnoc.`}
+        image={p?.avatarUrl}
+        url={`https://web.kinnoc.app/profile/${username}`}
+      />
       {topBar}
       <View style={styles.flex}>
         <FlatList

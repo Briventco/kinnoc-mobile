@@ -6,10 +6,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ApiError, describeError } from '@/api/errors';
 import type { Comment, Post } from '@/api/types';
+import { AutolinkText } from '@/components/AutolinkText';
 import { Avatar } from '@/components/Avatar';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
 import { KeyboardAvoidingView } from '@/components/KeyboardAvoidingView';
+import { MetaHead } from '@/components/MetaHead';
 import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { CenteredSpinner, ErrorState, Hairline, ListFooter } from '@/components/States';
@@ -67,7 +69,7 @@ function CommentRow({ comment, actions, reply }: { comment: Comment; actions: Co
             This comment was deleted.
           </Text>
         ) : (
-          <Text variant="message">{comment.text}</Text>
+          <AutolinkText variant="message">{comment.text}</AutolinkText>
         )}
         {deleted ? null : (
           <Pressable onPress={() => actions.onReply(comment)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Reply to ${firstName(comment)}`} style={styles.replyButton}>
@@ -124,6 +126,12 @@ export default function PostDetail() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <MetaHead
+        title={post.data ? `${post.data.author.displayName}'s Post` : 'Post'}
+        description={post.data?.text ? post.data.text.slice(0, 160) : undefined}
+        image={post.data?.media[0]?.url}
+        url={`https://web.kinnoc.app/post/${id}`}
+      />
       <ScreenHeader title="Post" />
       <KeyboardAvoidingView
         style={styles.flex}

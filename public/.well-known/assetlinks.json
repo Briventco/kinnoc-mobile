@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.brivent.kinnoc",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:7B:0F:52:AB:FC:02:16:3A:5B:E0:1C:17:8F:D2:C1:F6:0F:55:76:CD:08:4F:92:DF:D4:F3:D5:78:E8"
+      ]
+    }
+  }
+]
+

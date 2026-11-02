@@ -2,14 +2,16 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
 import { Bookmark, Calendar, CircleAlert, Clock, ExternalLink, MapPin, Share2, Tag, Ticket, Users, Video, type LucideIcon } from 'lucide-react-native';
 import { useState } from 'react';
-import { Share, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { DiscoverItem, EventItem } from '@/api/types';
+import { AutolinkText } from '@/components/AutolinkText';
 import { OrgMonogram } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { ScreenHeader } from '@/components/Header';
 import { IconButton } from '@/components/IconButton';
+import { MetaHead } from '@/components/MetaHead';
 import { Banner, CenteredSpinner, ErrorState, Hairline } from '@/components/States';
 import { Text } from '@/components/Text';
 import { ARRANGEMENT_LABEL, DateStamp, FORMAT_LABEL, KindLabel, OPPORTUNITY_LABEL, TypeCover, opportunityLabel, resourceLabel } from '@/features/discover/DiscoverRows';
@@ -17,6 +19,7 @@ import { useDiscoverItem } from '@/features/discover/hooks';
 import { useToggleSave } from '@/features/saved/hooks';
 import { deadlineLabel, formatDay, formatDayTime, formatEventRange, formatPrice, hasPassed, plural, timeZoneNote } from '@/lib/format';
 import { openExternal } from '@/lib/links';
+import { shareEvent } from '@/lib/shareLinks';
 import { api } from '@/services';
 import { colors, gutter, radius, space } from '@/theme';
 
@@ -35,12 +38,17 @@ export default function DiscoverDetail() {
   }
 
   const d = item.data;
-  const when = d.kind === 'event' ? ` · ${formatDayTime(d.startsAt, d.timeZone)}` : '';
-  const share = () => void Share.share({ message: d.externalUrl ? `${d.title}${when} — ${d.externalUrl}` : `${d.title}${when} on Kinnoc` });
+  const share = () => void shareEvent({ id: d.id, title: d.title });
   const action = actionState(d);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
+      <MetaHead
+        title={d.title}
+        description={d.kind === 'event' ? d.description?.slice(0, 160) : d.title}
+        image={d.coverUrl}
+        url={`https://web.kinnoc.app/events/${d.id}`}
+      />
       <ScreenHeader
         right={
           <>
@@ -73,9 +81,9 @@ export default function DiscoverDetail() {
                   {d.summary}
                 </Text>
               ) : null}
-              <Text variant="post" selectable>
+              <AutolinkText variant="post" selectable>
                 {d.description}
-              </Text>
+              </AutolinkText>
             </>
           ) : d.summary ? (
             <Text variant="post">{d.summary}</Text>
