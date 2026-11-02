@@ -49,6 +49,32 @@ describe('mergeMessages', () => {
     expect(confirmed?.pages[0].items[0].status).toBe('sent');
   });
 
+  it('reconciles optimistic bubble from live WebSocket event without isMine and preserves isMine: true', () => {
+    const pending = msg({ id: 'k2', clientId: 'k2', isMine: true, status: 'sending' });
+    const withPending = mergeMessages(history, [pending]);
+    // WebSocket broadcast payload does not carry isMine: true
+    const wsEventMessage = msg({ id: 'm5', clientId: 'k2', isMine: false, seq: 5 });
+    const confirmed = mergeMessages(withPending, [wsEventMessage]);
+    expect(ids(confirmed)?.[0]).toEqual(['m5', 'm3', 'm2']);
+    expect(confirmed?.pages[0].items[0].isMine).toBe(true);
+    expect(confirmed?.pages[0].items[0].status).toBe('sent');
+  });
+
+  it('handles multiple in-flight optimistic messages and reconciles each independently', () => {
+    const pending1 = msg({ id: 'k1', clientId: 'k1', isMine: true, status: 'sending', sentAt: '2026-10-24T10:01:00.000Z' });
+    const pending2 = msg({ id: 'k2', clientId: 'k2', isMine: true, status: 'sending', sentAt: '2026-10-24T10:02:00.000Z' });
+    const withBoth = mergeMessages(history, [pending1, pending2]);
+    expect(ids(withBoth)?.[0]).toEqual(['k2', 'k1', 'm3', 'm2']);
+
+    // Server acknowledges k1 first
+    const confirmed1 = mergeMessages(withBoth, [msg({ id: 'm4', clientId: 'k1', seq: 4 })]);
+    expect(ids(confirmed1)?.[0]).toEqual(['k2', 'm4', 'm3', 'm2']);
+
+    // Server acknowledges k2 second
+    const confirmed2 = mergeMessages(confirmed1, [msg({ id: 'm5', clientId: 'k2', seq: 5 })]);
+    expect(ids(confirmed2)?.[0]).toEqual(['m5', 'm4', 'm3', 'm2']);
+  });
+
   it('keeps unsent messages above everything the server has', () => {
     const merged = mergeMessages(history, [msg({ id: 'k1', clientId: 'k1', isMine: true, status: 'failed' }), msg({ id: 'm4', seq: 4 })]);
     expect(ids(merged)?.[0]).toEqual(['k1', 'm4', 'm3', 'm2']);

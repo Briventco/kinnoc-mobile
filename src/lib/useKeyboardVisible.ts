@@ -38,6 +38,20 @@ export function useKeyboardHeight() {
 
     if (typeof window === 'undefined') return;
 
+    const resetScroll = () => {
+      if (typeof window !== 'undefined') {
+        if (window.scrollY !== 0 || window.scrollX !== 0) {
+          window.scrollTo(0, 0);
+        }
+        if (document.documentElement && document.documentElement.scrollTop !== 0) {
+          document.documentElement.scrollTop = 0;
+        }
+        if (document.body && document.body.scrollTop !== 0) {
+          document.body.scrollTop = 0;
+        }
+      }
+    };
+
     const measureWebKeyboard = () => {
       if (!window.visualViewport) {
         setKeyboardHeight(0);
@@ -45,14 +59,14 @@ export function useKeyboardHeight() {
       }
       const vv = window.visualViewport;
       // On mobile browsers, visualViewport shrinks when virtual keyboard is open.
-      const diff = window.innerHeight - vv.height - vv.offsetTop;
-      // Only treat significant diffs (> 80px) as keyboard to avoid false positives on URL bar resizing
-      setKeyboardHeight(diff > 80 ? Math.round(diff) : 0);
-    };
-
-    const resetScroll = () => {
-      if (typeof window !== 'undefined' && (window.scrollY !== 0 || window.scrollX !== 0)) {
-        window.scrollTo(0, 0);
+      // Do NOT subtract vv.offsetTop: WebKit offsets the visual viewport to bring focused
+      // inputs into view, which would cancel out the detected keyboard height.
+      const rawDiff = window.innerHeight - vv.height;
+      // Keyboards on iOS/Android take at least 150px; use > 60px to avoid browser URL bar resizing
+      const isKeyboard = rawDiff > 60;
+      setKeyboardHeight(isKeyboard ? Math.round(rawDiff) : 0);
+      if (isKeyboard) {
+        resetScroll();
       }
     };
 
@@ -60,14 +74,20 @@ export function useKeyboardHeight() {
       measureWebKeyboard();
       resetScroll();
       requestAnimationFrame(resetScroll);
+      // On iOS Safari, the visual viewport resize animation can settle 50-300ms after focusin
+      setTimeout(measureWebKeyboard, 100);
+      setTimeout(measureWebKeyboard, 300);
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(measureWebKeyboard, 50);
+      setTimeout(measureWebKeyboard, 250);
     };
 
     measureWebKeyboard();
 
     window.addEventListener('focusin', handleFocusIn);
-    window.addEventListener('focusout', () => {
-      setTimeout(measureWebKeyboard, 50);
-    });
+    window.addEventListener('focusout', handleFocusOut);
     window.addEventListener('scroll', resetScroll, { passive: true });
 
     if (window.visualViewport) {
