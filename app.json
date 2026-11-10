@@ -12,8 +12,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.brivent.kinnoc",
       "associatedDomains": [
-        "applinks:web.kinnoc.app",
-        "applinks:kinnoc.app"
+        "applinks:web.kinnoc.app"
       ],
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Kinnoc uses your photos so you can share images in posts and community conversations.",
@@ -32,8 +31,7 @@
           "action": "VIEW",
           "autoVerify": true,
           "data": [
-            { "scheme": "https", "host": "web.kinnoc.app" },
-            { "scheme": "https", "host": "kinnoc.app" }
+            { "scheme": "https", "host": "web.kinnoc.app" }
           ],
           "category": [
             "BROWSABLE",

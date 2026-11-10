@@ -24,6 +24,7 @@ import type {
   ID,
   InboxEntry,
   Invitation,
+  InvitationPreview,
   JoinRequest,
   MembershipStatus,
   Message,
@@ -125,6 +126,13 @@ export interface KinnocApi {
     /** Communities the given user belongs to (public memberships only for other people). */
     /** The public communities someone belongs to, by username; for you, all of yours. */
     ofUser(username: string): Promise<CommunitySummary[]>;
+  };
+  /** Shared invitation links (`/invite/:code`). */
+  invitations: {
+    /** What the link invites to. Works signed out. */
+    resolve(code: string): Promise<InvitationPreview>;
+    /** Accepts it for the signed-in account; the caller then opens the community. */
+    accept(code: string): Promise<void>;
   };
   messages: {
     /** Newest first. `cursor` pages back through older history. Members only. */

@@ -1,5 +1,5 @@
 import { ApiError } from '../../errors';
-import { createHttpClient } from '../client';
+import { createHttpClient, toApiError } from '../client';
 
 type Reply = { status: number; body?: unknown };
 
@@ -143,5 +143,15 @@ describe('createHttpClient', () => {
   it('reports a failed connection as a network error', async () => {
     const { client } = setup([]);
     await expect(client.get('/users/me')).rejects.toMatchObject({ code: 'network' });
+  });
+});
+
+describe('toApiError', () => {
+  it('keeps the API’s error details, such as the community an accepted invitation belongs to', () => {
+    const error = toApiError(409, {
+      error: { code: 'ALREADY_MEMBER', message: 'Already a member', details: { communityId: 'c1' }, requestId: 'r1' },
+    });
+    expect(error).toMatchObject({ code: 'conflict', status: 409, serverCode: 'ALREADY_MEMBER', requestId: 'r1' });
+    expect(error.details).toEqual({ communityId: 'c1' });
   });
 });

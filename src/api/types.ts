@@ -156,6 +156,26 @@ export interface Invitation {
   /** Null if the inviter's account no longer exists. */
   invitedBy: Person | null;
   invitedAt: ISODate;
+  /** Signed code for the shareable `/invite/:code` link; absent from older servers. */
+  code?: string | null;
+}
+
+/** A shared invitation link (`/invite/:code`), resolved before anyone signs in. */
+export interface InvitationPreview {
+  code: string;
+  expiresAt: ISODate;
+  community: {
+    id: ID;
+    slug: string;
+    name: string;
+    monogram: string;
+    description: string;
+    photoUrl: string | null;
+    coverUrl: string | null;
+    visibility: CommunityVisibility;
+  };
+  /** Null if the inviter's account no longer exists. */
+  invitedBy: Person | null;
 }
 
 /** An uploaded image: the storage key to send to the API and a URL to preview it. */

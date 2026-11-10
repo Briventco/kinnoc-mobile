@@ -22,6 +22,7 @@ import type {
   FeedbackSummary,
   InboxEntry,
   Invitation,
+  InvitationPreview,
   JoinPolicy,
   JoinRequest,
   MembershipStatus,
@@ -140,6 +141,24 @@ export interface ApiInvitation {
   user: ApiPerson;
   invitedBy: ApiPerson | null;
   invitedAt: string;
+  code?: string;
+  inviteUrl?: string;
+}
+
+/** `GET /invites/:code`. */
+export interface ApiInvitationPreview {
+  code: string;
+  expiresAt: string;
+  community: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string;
+    avatarUrl: string | null;
+    coverUrl: string | null;
+    visibility: ApiCommunity['visibility'];
+  };
+  invitedBy: (ApiPerson & { id?: string }) | null;
 }
 
 export interface ApiAccount {
@@ -327,6 +346,24 @@ export const toInvitation = (i: ApiInvitation): Invitation => ({
   user: toPerson(i.user),
   invitedBy: i.invitedBy ? toPerson(i.invitedBy) : null,
   invitedAt: i.invitedAt,
+  code: i.code ?? null,
+});
+
+export const toInvitationPreview = (p: ApiInvitationPreview): InvitationPreview => ({
+  code: p.code,
+  expiresAt: p.expiresAt,
+  community: {
+    id: p.community.id,
+    slug: p.community.slug,
+    name: p.community.name,
+    monogram: monogramFor(p.community.name),
+    description: p.community.description,
+    photoUrl: p.community.avatarUrl,
+    coverUrl: p.community.coverUrl,
+    visibility: VISIBILITY[p.community.visibility],
+  },
+  // The API also sends the inviter's user ID; the app never keeps user IDs of other people.
+  invitedBy: p.invitedBy ? toPerson(p.invitedBy) : null,
 });
 
 /**

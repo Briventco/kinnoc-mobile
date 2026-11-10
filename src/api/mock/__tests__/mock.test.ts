@@ -82,3 +82,19 @@ describe('mock backend', () => {
     expect((await api.profile.removeAvatar()).avatarUrl).toBeNull();
   });
 });
+
+describe('mock invitation links', () => {
+  it('previews, accepts, then reports the link as used, like the API', async () => {
+    const { api } = createMockBackend(() => null);
+    const preview = await api.invitations.resolve('c_writers');
+    expect(preview.community).toMatchObject({ id: 'c_writers', name: expect.any(String) });
+    await api.invitations.accept('c_writers');
+    expect((await api.communities.get('c_writers')).membership).toBe('member');
+    await expect(api.invitations.resolve('c_writers')).rejects.toMatchObject({
+      serverCode: 'ALREADY_MEMBER',
+      details: { communityId: 'c_writers' },
+    });
+    await expect(api.invitations.resolve('expired')).rejects.toMatchObject({ status: 410, serverCode: 'INVITATION_EXPIRED' });
+    await expect(api.invitations.resolve('no-such-code')).rejects.toMatchObject({ status: 404, serverCode: 'INVITATION_NOT_FOUND' });
+  });
+});

@@ -9,7 +9,7 @@
  */
 import type { KinnocApi } from '../contract';
 import { DEFAULT_COMMUNITY_CATEGORIES } from '../categories';
-import { ApiError } from '../errors';
+import { ApiError, codeForStatus } from '../errors';
 import type { ConversationEvent, RealtimeClient } from '../realtime';
 import type {
   Comment,
@@ -23,6 +23,7 @@ import type {
   FeedItem,
   InboxEntry,
   Invitation,
+  InvitationPreview,
   JoinRequest,
   Message,
   Page,
@@ -613,6 +614,45 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       },
     },
 
+    invitations: {
+      // Mock codes are community IDs or slugs; 'expired' stands for an expired link.
+      async resolve(code) {
+        await delay();
+        if (code === 'expired') throw new ApiError(codeForStatus(410), 'Invitation has expired', 410, {}, 'INVITATION_EXPIRED');
+        const c = state.communities.find((x) => x.id === code || x.slug === code);
+        if (!c) throw new ApiError('not_found', 'Invitation not found', 404, {}, 'INVITATION_NOT_FOUND');
+        if (c.membership === 'member') {
+          throw new ApiError('conflict', 'Already a member', 409, {}, 'ALREADY_MEMBER', null, { communityId: c.id });
+        }
+        const preview: InvitationPreview = {
+          code,
+          expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          community: {
+            id: c.id,
+            slug: c.slug,
+            name: c.name,
+            monogram: c.monogram,
+            description: c.description,
+            photoUrl: c.photoUrl,
+            coverUrl: c.coverUrl,
+            visibility: c.visibility,
+          },
+          invitedBy: null,
+        };
+        return clone(preview);
+      },
+      async accept(code) {
+        await delay(400);
+        const c = state.communities.find((x) => x.id === code || x.slug === code);
+        if (!c) throw new ApiError('not_found', 'Invitation not found', 404, {}, 'INVITATION_NOT_FOUND');
+        if (c.membership !== 'member') {
+          c.membership = 'member';
+          c.role = 'member';
+          c.memberCount += 1;
+          state.messages[c.id] ??= [];
+        }
+      },
+    },
     messages: {
       async list(communityId, cursor) {
         await delay();

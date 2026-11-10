@@ -22,6 +22,8 @@ export class ApiError extends Error {
   readonly serverCode: string | null;
   /** The API's request ID, to quote when reporting a problem. */
   readonly requestId: string | null;
+  /** The API's `error.details`, e.g. `{ communityId }` with ALREADY_MEMBER. */
+  readonly details: unknown;
 
   constructor(
     code: ApiErrorCode,
@@ -30,6 +32,7 @@ export class ApiError extends Error {
     fields: Record<string, string> = {},
     serverCode: string | null = null,
     requestId: string | null = null,
+    details: unknown = undefined,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -38,6 +41,7 @@ export class ApiError extends Error {
     this.fields = fields;
     this.serverCode = serverCode;
     this.requestId = requestId;
+    this.details = details;
   }
 
   get retryable() {
@@ -85,6 +89,7 @@ const SERVER_MESSAGES: Record<string, string> = {
   MEMBER_NOT_FOUND: "They aren't a member any more.",
   JOIN_REQUEST_NOT_FOUND: 'That request was already handled.',
   INVITATION_NOT_FOUND: 'That invitation is no longer valid.',
+  INVITATION_EXPIRED: 'That invitation has expired. Ask for a new one.',
   PROFILE_NOT_FOUND: 'No one has that username.',
   MESSAGE_NOT_FOUND: 'That message is no longer available.',
   INVALID_REPLY: "You can't reply to that message.",
