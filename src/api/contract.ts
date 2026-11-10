@@ -3,6 +3,9 @@ import type {
   ApiCapabilities,
   AppNotification,
   Category,
+  FeedbackDetail,
+  FeedbackInput,
+  FeedbackSummary,
   Comment,
   CommentInput,
   Community,
@@ -41,6 +44,7 @@ import type {
   SavedItem,
   SaveTarget,
   SendMessageInput,
+  UploadedFeedbackAttachment,
   UploadedImage,
   Verification,
 } from './types';
@@ -191,5 +195,19 @@ export interface KinnocApi {
   saved: {
     list(cursor: string | null): Promise<Page<SavedItem>>;
     set(target: SaveTarget, saved: boolean): Promise<void>;
+  };
+  /**
+   * Feedback and suggestions to the Kinnoc team. Every signed-in user may send them and read only
+   * their own. A backend without these routes throws `unsupported`.
+   */
+  feedback: {
+    /** Idempotent by `clientId`. Attachments must already be uploaded with `uploadAttachment`. */
+    submit(input: FeedbackInput): Promise<FeedbackDetail>;
+    /** The viewer's own submissions, newest first. */
+    mine(cursor: string | null): Promise<Page<FeedbackSummary>>;
+    /** One of the viewer's own submissions with the team's replies. Anyone else's is `FEEDBACK_NOT_FOUND`. */
+    get(id: ID): Promise<FeedbackDetail>;
+    /** Uploads a local screenshot to the private feedback bucket. Resolves once storage has accepted it. */
+    uploadAttachment(localUri: string): Promise<UploadedFeedbackAttachment>;
   };
 }

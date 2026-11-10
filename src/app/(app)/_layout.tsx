@@ -14,6 +14,7 @@ function AppLayoutContent() {
       <Stack.Screen name="compose" options={{ presentation: 'modal' }} />
       <Stack.Screen name="settings/edit-profile" options={{ presentation: 'modal' }} />
       <Stack.Screen name="community/new" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="feedback/new" options={{ presentation: 'modal' }} />
       <Stack.Screen name="community/[id]/edit" options={{ presentation: 'modal' }} />
       <Stack.Screen name="stories/[id]" options={{ presentation: 'fullScreenModal', animation: 'fade', contentStyle: { backgroundColor: '#000000' } }} />
     </Stack>

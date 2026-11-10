@@ -104,6 +104,8 @@ const SERVER_MESSAGES: Record<string, string> = {
   SESSION_TIMEOUT: "We couldn't confirm your sign-in in time. Retry, or sign out and sign back in.",
   EVENT_NOT_FOUND: "This event isn't available. It may have been withdrawn or never published.",
   INVALID_CURSOR: 'The list changed. Pull down to refresh it.',
+  FEEDBACK_NOT_FOUND: "This feedback isn't available. You can only open feedback you sent.",
+  INVALID_ATTACHMENT: "A screenshot couldn't be attached. Remove it and add it again.",
 };
 
 /** Plain-language message for any thrown value. */

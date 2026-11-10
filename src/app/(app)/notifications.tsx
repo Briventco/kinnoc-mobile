@@ -1,5 +1,5 @@
 import { router, type Href } from 'expo-router';
-import { AtSign, Bell, CalendarClock, CheckCircle, Clock, Heart, MessageCircle, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
+import { AtSign, Bell, CalendarClock, CheckCircle, Clock, Heart, MessageCircle, MessageSquareHeart, SlidersHorizontal, SmilePlus, Users, type LucideIcon } from 'lucide-react-native';
 import { SectionList, RefreshControl, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -29,6 +29,7 @@ const BADGE: Record<NotificationKind, { icon: LucideIcon; bg: string } | null> =
   community: { icon: Users, bg: colors.brandNavy },
   verification: { icon: CheckCircle, bg: colors.brandBlue },
   message: { icon: MessageCircle, bg: colors.brandNavy },
+  feedback: { icon: MessageSquareHeart, bg: colors.brandNavy },
   system: { icon: Bell, bg: colors.brandNavy },
 };
 
@@ -53,7 +54,7 @@ function Identity({ n }: { n: AppNotification }) {
   } else {
     base = (
       <View style={[styles.stampBox, { backgroundColor: colors.surface2, borderRadius: 22, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }]}>
-        <Bell size={20} color={colors.primary} />
+        {n.kind === 'feedback' ? <MessageSquareHeart size={20} color={colors.primary} /> : <Bell size={20} color={colors.primary} />}
       </View>
     );
   }

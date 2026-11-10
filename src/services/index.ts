@@ -14,6 +14,8 @@ import {
   AVATAR_BUCKET,
   AVATAR_LIMITS,
   COMMUNITY_MEDIA_BUCKET,
+  createFeedbackAttachmentSigner,
+  createFeedbackAttachmentUploader,
   createImageRemover,
   createImageUploader,
   POST_MEDIA_BUCKET,
@@ -59,6 +61,9 @@ function createBackend(): { api: KinnocApi; realtime: RealtimeClient } {
       uploadPostImage: supabase ? createImageUploader(supabase, POST_MEDIA_BUCKET) : noUpload,
       uploadAvatar: supabase ? createImageUploader(supabase, AVATAR_BUCKET, AVATAR_LIMITS) : noUpload,
       removeAvatarFile: supabase ? createImageRemover(supabase, AVATAR_BUCKET) : () => Promise.resolve(),
+      // Private bucket: uploaded and read with the user's own session, through signed URLs.
+      uploadFeedbackAttachment: supabase ? createFeedbackAttachmentUploader(supabase) : noUpload,
+      signFeedbackAttachment: supabase ? createFeedbackAttachmentSigner(supabase) : undefined,
     });
     const realtime = env.socket ? createSocketRealtime({ ...env.socket, getAccessToken, appState: AppState }) : noopRealtime;
     return { api, realtime };

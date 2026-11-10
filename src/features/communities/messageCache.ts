@@ -28,6 +28,7 @@ const newestFirst = (a: Message, b: Message) => {
  */
 function reconcile(current: Message, incoming: Message): Message {
   if (current.deletedAt && !incoming.deletedAt) return current;
+  // Once a message is known to be the viewer's, it stays theirs: socket echoes carry `isMine: false`.
   const isMine = current.isMine || incoming.isMine;
   const status =
     incoming.seq !== null || (incoming.id && incoming.id !== current.clientId && incoming.status === 'sent')

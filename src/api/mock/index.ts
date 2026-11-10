@@ -18,6 +18,8 @@ import type {
   CommunityRole,
   CommunitySummary,
   DiscoverItem,
+  FeedbackDetail,
+  FeedbackSummary,
   FeedItem,
   InboxEntry,
   Invitation,
@@ -83,6 +85,7 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     members: {} as Record<string, CommunityMember[]>,
     joinRequests: {} as Record<string, JoinRequest[]>,
     invitations: {} as Record<string, Invitation[]>,
+    feedback: clone(fx.feedback),
   };
   // Sequence numbers in send order, as the server assigns them.
   for (const list of Object.values(state.messages)) list.forEach((m, i) => (m.seq = i + 1));
@@ -903,6 +906,55 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         else findDiscover(target.id);
         state.saved = state.saved.filter((s) => !(s.kind === target.kind && s.id === target.id));
         if (saved) state.saved.push({ ...target, savedAt: new Date().toISOString() });
+      },
+    },
+    feedback: {
+      async submit(input) {
+        await delay(600);
+        // Dev affordance: a subject containing "/fail" is refused, to exercise the failure state.
+        if (input.subject.includes('/fail')) throw new ApiError('server', 'Sample failure', 500);
+        const existing = state.feedback.find((f) => f.id === `fb_${input.clientId}`);
+        if (existing) return clone(existing);
+        const now = new Date().toISOString();
+        const created: FeedbackDetail = {
+          id: `fb_${input.clientId}`,
+          category: input.category,
+          subject: input.subject,
+          description: input.description,
+          status: 'received',
+          createdAt: now,
+          updatedAt: now,
+          responseCount: 0,
+          device: input.device,
+          // In sample mode the "key" is the local file, so the preview still shows.
+          attachments: input.attachments.map((a) => ({ ...a, url: a.key })),
+          responses: [],
+        };
+        state.feedback.unshift(created);
+        return clone(created);
+      },
+      async mine(cursor) {
+        await delay();
+        const summaries: FeedbackSummary[] = state.feedback.map(({ id, category, subject, status, createdAt, updatedAt, responseCount }) => ({
+          id,
+          category,
+          subject,
+          status,
+          createdAt,
+          updatedAt,
+          responseCount,
+        }));
+        return clone(paginate(summaries, cursor, 20));
+      },
+      async get(id) {
+        await delay();
+        const found = state.feedback.find((f) => f.id === id);
+        if (!found) throw new ApiError('not_found', 'Feedback not found', 404, {}, 'FEEDBACK_NOT_FOUND');
+        return clone(found);
+      },
+      async uploadAttachment(localUri) {
+        await delay(300);
+        return { key: localUri, mimeType: 'image/jpeg', sizeBytes: 1 };
       },
     },
   };

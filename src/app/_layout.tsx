@@ -16,7 +16,7 @@ import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { env } from '@/config/env';
-import { normalizeDeepLinkTarget } from '@/lib/deepLinks';
+import { destinationAfterSignIn } from '@/lib/deepLinks';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/OnboardingProvider';
 import {
   consumePendingDestinationAsync,
@@ -61,23 +61,6 @@ export default function RootLayout() {
   );
 }
 
-function extractTarget(rawUrl: string): string | null {
-  if (!rawUrl) return null;
-  const normalized = normalizeDeepLinkTarget(rawUrl);
-  if (
-    normalized &&
-    normalized !== '/' &&
-    !normalized.startsWith('/(auth)') &&
-    !normalized.startsWith('/welcome') &&
-    !normalized.startsWith('/sign-in') &&
-    !normalized.startsWith('/sign-up') &&
-    !normalized.startsWith('/onboarding')
-  ) {
-    return normalized;
-  }
-  return null;
-}
-
 function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   const { status } = useAuth();
   const { completed } = useOnboarding();
@@ -100,8 +83,12 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     if (initialUrlRead.current) return;
     initialUrlRead.current = true;
     void Linking.getInitialURL().then((initialUrl) => {
-      const target = initialUrl ? extractTarget(initialUrl) : null;
-      if (target) setPendingDestination(target);
+      if (initialUrl) {
+        const target = destinationAfterSignIn(initialUrl);
+        if (target && status !== 'signedIn') {
+          setPendingDestination(target);
+        }
+      }
     });
   }, []);
 
@@ -109,8 +96,13 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   // here too opened every link twice); signed out, remember the target for after sign-in.
   useEffect(() => {
     const sub = Linking.addEventListener('url', ({ url }) => {
-      const target = extractTarget(url);
-      if (target && status !== 'signedIn') setPendingDestination(target);
+      const target = destinationAfterSignIn(url);
+      if (!target) return;
+      if (status === 'signedIn') {
+        router.push(target as Href);
+      } else {
+        setPendingDestination(target);
+      }
     });
     return () => sub.remove();
   }, [status]);

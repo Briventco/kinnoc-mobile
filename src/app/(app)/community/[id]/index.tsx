@@ -19,16 +19,16 @@ import { Text } from '@/components/Text';
 import { useToast } from '@/components/Toast';
 import { ChatComposer } from '@/features/communities/ChatComposer';
 import {
-  lostAccess,
-  useCommunity,
-  useConversationEvents,
-  useDeleteMessage,
-  useMarkCommunityRead,
-  useMessages,
-  useReact,
-  useRealtimeStatus,
-  useReceipts,
-  useSendMessage,
+    lostAccess,
+    useCommunity,
+    useConversationEvents,
+    useDeleteMessage,
+    useMarkCommunityRead,
+    useMessages,
+    useReact,
+    useRealtimeStatus,
+    useReceipts,
+    useSendMessage,
 } from '@/features/communities/hooks';
 import { accessCopy, MembershipActions } from '@/features/communities/MembershipActions';
 import { DateSeparator, MessageBubble, TypingBubble } from '@/features/communities/MessageBubble';
@@ -37,8 +37,8 @@ import { useMe } from '@/features/profile/hooks';
 import { flatten } from '@/lib/cache';
 import { formatDateSeparator, isSameDay, plural, uid } from '@/lib/format';
 import { keys, queryClient } from '@/lib/query';
-import { api, realtime } from '@/services';
 import { KEYBOARD_BEHAVIOR, useKeyboardHeight } from '@/lib/useKeyboardVisible';
+import { api, realtime } from '@/services';
 import { colors, gutter, radius, shadow, space } from '@/theme';
 
 const GROUP_GAP_MS = 3 * 60_000;
