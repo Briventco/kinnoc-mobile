@@ -102,6 +102,8 @@ export function useLiveNotifications() {
     return realtime.subscribeNotifications(({ unreadCount }) => {
       queryClient.setQueryData(keys.unreadNotifications, unreadCount);
       queryClient.invalidateQueries({ queryKey: keys.notifications });
+      // A new notification may be a reply to the viewer's feedback: refresh any open feedback screen.
+      queryClient.invalidateQueries({ queryKey: keys.feedbackAll });
     });
   }, []);
 }

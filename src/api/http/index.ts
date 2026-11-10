@@ -1,12 +1,14 @@
 import type { KinnocApi } from '../contract';
 import { ApiError, isApiError, unsupported } from '../errors';
-import type { Category, Page, PostImage, UploadedImage } from '../types';
+import type { Category, FeedbackDetail, Page, PostImage, UploadedFeedbackAttachment, UploadedImage } from '../types';
 import type { HttpClient } from './client';
 import {
   type ApiAccount,
   type ApiComment,
   type ApiCommunity,
   type ApiEvent,
+  type ApiFeedback,
+  type ApiFeedbackSummary,
   type ApiInboxEntry,
   type ApiInvitation,
   type ApiJoinRequest,
@@ -28,6 +30,9 @@ import {
   toComment,
   toCommunityBody,
   toEvent,
+  toFeedbackBody,
+  toFeedbackDetail,
+  toFeedbackSummary,
   toEventPage,
   toInboxEntry,
   toInvitation,
@@ -63,7 +68,21 @@ export interface HttpApiOptions {
   uploadAvatar: (localUri: string) => Promise<UploadedImage>;
   /** Deletes one of the caller's own files from the avatars bucket. */
   removeAvatarFile: (key: string) => Promise<void>;
+  /** Uploads a screenshot to the private feedback bucket. */
+  uploadFeedbackAttachment?: (localUri: string) => Promise<UploadedFeedbackAttachment>;
+  /** Signs a short-lived URL for one of the caller's own feedback files; null when it can't. */
+  signFeedbackAttachment?: (key: string) => Promise<string | null>;
 }
+
+/**
+ * Feedback routes. The API's feedback module (schema in migration `20261107120000_feedback`) is
+ * not deployed yet; these follow the contract in docs/feedback.md. Change them here only.
+ */
+export const FEEDBACK_ROUTES = {
+  submit: '/feedback',
+  mine: '/users/me/feedback',
+  get: (id: string) => `/feedback/${encodeURIComponent(id)}`,
+} as const;
 
 /** The API's feed scopes for the app's feed tabs. There is no personalised or following feed yet. */
 const FEED_SCOPE = { 'for-you': 'public', communities: 'communities' } as const;
@@ -93,6 +112,26 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
   };
 
   const notAvailable = (feature: string) => () => Promise.reject(unsupported(feature));
+
+  /**
+   * An API deployed without the feedback routes answers the generic `NOT_FOUND` (not
+   * `FEEDBACK_NOT_FOUND`): that is "not available yet", never a failure the user can retry.
+   */
+  const feedbackRoute = async <T>(request: () => Promise<T>): Promise<T> => {
+    try {
+      return await request();
+    } catch (error) {
+      if (isApiError(error, 'NOT_FOUND')) throw unsupported('Feedback');
+      throw error;
+    }
+  };
+  /** Fills in preview URLs for attachments the API did not sign, with the caller's own session. */
+  const withAttachmentUrls = async (detail: FeedbackDetail): Promise<FeedbackDetail> => {
+    const sign = options.signFeedbackAttachment;
+    if (!sign || detail.attachments.every((a) => a.url)) return detail;
+    const attachments = await Promise.all(detail.attachments.map(async (a) => (a.url ? a : { ...a, url: await sign(a.key) })));
+    return { ...detail, attachments };
+  };
 
   const currentAvatarKey = async () => (await client.get<ApiAccount>('/users/me')).profile?.avatarKey ?? null;
   /** Storage cleanup is best effort: a leftover file must never fail a change the API has made. */
@@ -373,6 +412,14 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
     saved: {
       list: notAvailable('Saved items'),
       set: notAvailable('Saving'),
+    },
+    feedback: {
+      submit: async (input) =>
+        withAttachmentUrls(toFeedbackDetail(await feedbackRoute(() => client.post<ApiFeedback>(FEEDBACK_ROUTES.submit, { body: toFeedbackBody(input) })))),
+      mine: async (cursor) =>
+        mapPage(await feedbackRoute(() => client.get<Page<ApiFeedbackSummary>>(FEEDBACK_ROUTES.mine, { query: { cursor } })), toFeedbackSummary),
+      get: async (id) => withAttachmentUrls(toFeedbackDetail(await feedbackRoute(() => client.get<ApiFeedback>(FEEDBACK_ROUTES.get(id))))),
+      uploadAttachment: options.uploadFeedbackAttachment ?? notAvailable('Screenshot upload'),
     },
   };
 }

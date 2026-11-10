@@ -13,6 +13,13 @@ import type {
   CommunityRole,
   CommunityVisibility,
   EventItem,
+  FeedbackAttachment,
+  FeedbackCategory,
+  FeedbackDetail,
+  FeedbackDevice,
+  FeedbackInput,
+  FeedbackStatus,
+  FeedbackSummary,
   InboxEntry,
   Invitation,
   JoinPolicy,
@@ -599,6 +606,7 @@ const TYPE_TO_KIND: Record<string, NotificationKind> = {
   COMMUNITY_ANNOUNCEMENT: 'community',
   VERIFICATION_APPROVED: 'verification',
   VERIFICATION_REVOKED: 'verification',
+  FEEDBACK_RESPONSE: 'feedback',
   SYSTEM: 'system',
 };
 
@@ -678,5 +686,119 @@ export function toApiNotificationPreferences(p: NotificationPreferences): Partia
     pushAnnouncements: p.pushAnnouncements,
     pushVerifications: p.pushVerifications,
     pushSystem: p.pushSystem,
+  };
+}
+
+/* ---------- Feedback ---------- */
+
+export type ApiFeedbackCategory = 'GENERAL' | 'BUG_REPORT' | 'FEATURE_REQUEST' | 'USER_EXPERIENCE';
+export type ApiFeedbackStatus = 'RECEIVED' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+type ApiFeedbackPlatform = 'IOS' | 'ANDROID' | 'WEB' | 'OTHER';
+
+/** A submission in the caller's list (`GET /users/me/feedback`). */
+export interface ApiFeedbackSummary {
+  id: string;
+  category: ApiFeedbackCategory;
+  subject: string;
+  status: ApiFeedbackStatus;
+  createdAt: string;
+  updatedAt: string;
+  responseCount?: number;
+}
+
+export interface ApiFeedbackAttachment {
+  position?: number;
+  /** Object path in the feedback bucket. The schema calls it `storageKey`; either name is read. */
+  key?: string;
+  storageKey?: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** A signed URL, if the API provides one. Otherwise the app signs the key itself. */
+  url?: string | null;
+}
+
+/** A submission as its sender may see it (`GET /feedback/:id`, `POST /feedback`). */
+export interface ApiFeedback extends ApiFeedbackSummary {
+  description: string;
+  appVersion?: string | null;
+  platform?: ApiFeedbackPlatform | null;
+  osVersion?: string | null;
+  attachments?: ApiFeedbackAttachment[];
+  responses?: { id: string; body: string; createdAt: string }[];
+}
+
+const FEEDBACK_CATEGORY: Record<ApiFeedbackCategory, FeedbackCategory> = {
+  GENERAL: 'general',
+  BUG_REPORT: 'bug',
+  FEATURE_REQUEST: 'feature',
+  USER_EXPERIENCE: 'experience',
+};
+export const toApiFeedbackCategory: Record<FeedbackCategory, ApiFeedbackCategory> = {
+  general: 'GENERAL',
+  bug: 'BUG_REPORT',
+  feature: 'FEATURE_REQUEST',
+  experience: 'USER_EXPERIENCE',
+};
+const FEEDBACK_STATUS: Record<ApiFeedbackStatus, FeedbackStatus> = {
+  RECEIVED: 'received',
+  UNDER_REVIEW: 'under-review',
+  IN_PROGRESS: 'in-progress',
+  RESOLVED: 'resolved',
+  CLOSED: 'closed',
+};
+const FEEDBACK_PLATFORM: Record<ApiFeedbackPlatform, FeedbackDevice['platform']> = { IOS: 'ios', ANDROID: 'android', WEB: 'web', OTHER: 'other' };
+const toApiPlatform: Record<FeedbackDevice['platform'], ApiFeedbackPlatform> = { ios: 'IOS', android: 'ANDROID', web: 'WEB', other: 'OTHER' };
+
+export function toFeedbackSummary(f: ApiFeedbackSummary): FeedbackSummary {
+  return {
+    id: f.id,
+    // A category or status added on the server later reads as the most neutral one.
+    category: FEEDBACK_CATEGORY[f.category] ?? 'general',
+    subject: f.subject,
+    status: FEEDBACK_STATUS[f.status] ?? 'received',
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt ?? f.createdAt,
+    responseCount: f.responseCount ?? (f as ApiFeedback).responses?.length ?? 0,
+  };
+}
+
+/**
+ * Field by field on purpose: whatever else the payload carries (internal notes, the assignee,
+ * the activity log, an administrator's identity on a reply) never reaches the app.
+ */
+export function toFeedbackDetail(f: ApiFeedback): FeedbackDetail {
+  const device: FeedbackDevice | null =
+    f.platform || f.appVersion || f.osVersion
+      ? { appVersion: f.appVersion ?? null, platform: f.platform ? (FEEDBACK_PLATFORM[f.platform] ?? 'other') : 'other', osVersion: f.osVersion ?? null }
+      : null;
+  const attachments: FeedbackAttachment[] = [...(f.attachments ?? [])]
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((a) => ({ key: a.key ?? a.storageKey ?? '', mimeType: a.mimeType, sizeBytes: a.sizeBytes, url: a.url ?? null }))
+    .filter((a) => a.key);
+  const responses = [...(f.responses ?? [])]
+    .map((r) => ({ id: r.id, body: r.body, createdAt: r.createdAt }))
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return { ...toFeedbackSummary(f), responseCount: responses.length, description: f.description, device, attachments, responses };
+}
+
+/**
+ * `POST /feedback` body. Device fields are sent only when the app has them. Attachments are sent
+ * as `{ key }` only: the API rejects any other field, and reads each file's owner, type and size
+ * from Supabase Storage itself rather than trusting the client.
+ */
+export function toFeedbackBody(input: FeedbackInput) {
+  return {
+    clientId: input.clientId,
+    category: toApiFeedbackCategory[input.category],
+    subject: input.subject,
+    description: input.description,
+    ...(input.attachments.length ? { attachments: input.attachments.map(({ key }) => ({ key })) } : {}),
+    ...(input.device
+      ? {
+          platform: toApiPlatform[input.device.platform],
+          ...(input.device.appVersion ? { appVersion: input.device.appVersion } : {}),
+          ...(input.device.osVersion ? { osVersion: input.device.osVersion } : {}),
+        }
+      : {}),
   };
 }

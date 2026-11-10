@@ -6,6 +6,7 @@
 import { Image } from 'react-native';
 
 import type {
+  FeedbackDetail,
   AppNotification,
   Verification,
   Comment,
@@ -710,6 +711,52 @@ export const notifications: AppNotification[] = [
     read: true,
     community: communities[4],
     target: '/community/c_builders/info',
+  },
+  {
+    id: 'n_7',
+    kind: 'feedback',
+    actor: null,
+    title: [{ text: 'The Kinnoc team replied to your feedback', strong: true }],
+    excerpt: 'Thanks for flagging this. A fix is on its way in the next update.',
+    createdAt: ago(5 * DAY),
+    read: true,
+    target: '/feedback/fb_1',
+  },
+];
+
+/** The viewer's sample feedback: one answered bug report and one fresh suggestion. */
+export const feedback: FeedbackDetail[] = [
+  {
+    id: 'fb_2',
+    category: 'feature',
+    subject: 'Let me pin messages in a community chat',
+    description: 'Our community shares the same links every week. Pinning one message at the top of the chat would save everyone scrolling.',
+    status: 'received',
+    createdAt: ago(1 * DAY),
+    updatedAt: ago(1 * DAY),
+    responseCount: 0,
+    device: null,
+    attachments: [],
+    responses: [],
+  },
+  {
+    id: 'fb_1',
+    category: 'bug',
+    subject: 'Photos upload twice on a slow connection',
+    description: 'When I post with two photos on mobile data, the post sometimes shows four photos instead of two.',
+    status: 'in-progress',
+    createdAt: ago(6 * DAY),
+    updatedAt: ago(5 * DAY),
+    responseCount: 1,
+    device: { appVersion: '0.1.0', platform: 'ios', osVersion: '18.2' },
+    attachments: [],
+    responses: [
+      {
+        id: 'fbr_1',
+        body: 'Thanks for flagging this. We reproduced it and a fix is on its way in the next update.',
+        createdAt: ago(5 * DAY),
+      },
+    ],
   },
 ];
 

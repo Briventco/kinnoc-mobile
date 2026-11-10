@@ -11,6 +11,7 @@ export const SUPPORTED_DEEP_LINK_TYPES = [
   'event',
   'notifications',
   'invite',
+  'feedback',
 ] as const;
 
 export type DeepLinkType = (typeof SUPPORTED_DEEP_LINK_TYPES)[number];
@@ -172,9 +173,30 @@ export function parseDeepLink(url?: string | null): ParsedDeepLink {
     return { type: 'invite', identifier: inviteMatch[1], normalizedPath };
   }
 
+  // Only the sender's own feedback: the screen itself enforces that, behind sign-in.
+  const feedbackMatch = pathOnly.match(/^\/feedback\/([^/]+)$/);
+  if (feedbackMatch && feedbackMatch[1] !== 'new' && feedbackMatch[1] !== 'history') {
+    return { type: 'feedback', identifier: feedbackMatch[1], normalizedPath };
+  }
+
   if (pathOnly === '/notifications') {
     return { type: 'notifications', normalizedPath };
   }
 
   return { type: 'unknown', normalizedPath };
+}
+
+/** Routes that only make sense signed out; a link to one is never kept for after sign-in. */
+const SIGNED_OUT_ROUTES = ['/(auth)', '/welcome', '/sign-in', '/sign-up', '/onboarding'];
+
+/**
+ * Where an incoming link (deep link, universal link, notification) should land once the user is
+ * signed in, or null when there is nothing worth keeping (home, or a signed-out screen). Used to
+ * preserve a destination such as `/feedback/<id>` through sign-in.
+ */
+export function destinationAfterSignIn(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  const normalized = normalizeDeepLinkTarget(rawUrl);
+  if (!normalized || normalized === '/' || SIGNED_OUT_ROUTES.some((r) => normalized.startsWith(r))) return null;
+  return normalized;
 }

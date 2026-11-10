@@ -16,7 +16,7 @@ import { ResponsiveContainer } from '@/components/ResponsiveContainer';
 import { Text } from '@/components/Text';
 import { ToastProvider, useToast } from '@/components/Toast';
 import { env } from '@/config/env';
-import { normalizeDeepLinkTarget } from '@/lib/deepLinks';
+import { destinationAfterSignIn } from '@/lib/deepLinks';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/OnboardingProvider';
 import {
   consumePendingDestinationAsync,
@@ -61,23 +61,6 @@ export default function RootLayout() {
   );
 }
 
-function extractTarget(rawUrl: string): string | null {
-  if (!rawUrl) return null;
-  const normalized = normalizeDeepLinkTarget(rawUrl);
-  if (
-    normalized &&
-    normalized !== '/' &&
-    !normalized.startsWith('/(auth)') &&
-    !normalized.startsWith('/welcome') &&
-    !normalized.startsWith('/sign-in') &&
-    !normalized.startsWith('/sign-up') &&
-    !normalized.startsWith('/onboarding')
-  ) {
-    return normalized;
-  }
-  return null;
-}
-
 function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   const { status } = useAuth();
   const { completed } = useOnboarding();
@@ -94,7 +77,7 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
   useEffect(() => {
     void Linking.getInitialURL().then((initialUrl) => {
       if (initialUrl) {
-        const target = extractTarget(initialUrl);
+        const target = destinationAfterSignIn(initialUrl);
         if (target && status !== 'signedIn') {
           setPendingDestination(target);
         }
@@ -102,7 +85,7 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
     });
 
     const sub = Linking.addEventListener('url', ({ url }) => {
-      const target = extractTarget(url);
+      const target = destinationAfterSignIn(url);
       if (!target) return;
       if (status === 'signedIn') {
         router.push(target as Href);

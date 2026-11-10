@@ -68,6 +68,8 @@ It never connects to Postgres or Prisma and holds no service-role key.
 | `feed.comments` / `replies` | `GET /posts/:id/comments` / `GET /posts/:id/comments/:commentId/replies` (oldest first) |
 | `feed.comment` / `editComment` / `removeComment` | `POST /posts/:id/comments { text, clientId, parentId? }` / `PATCH` / `DELETE /posts/:id/comments/:commentId` |
 | `media.uploadPostImage` | Supabase Storage upload to `post-media/<user id>/<uuid>.jpg` with the user's session; the key, width and height go in the post's `media` |
+| `feedback.submit` / `mine` / `get` | `POST /feedback { category, subject, description, attachments?: [{ key }], platform?, appVersion?, osVersion?, clientId }` / `GET /users/me/feedback?cursor=` / `GET /feedback/:id`. See [feedback.md](feedback.md) |
+| `feedback.uploadAttachment` | Supabase Storage upload to the private `feedback-attachments/<user id>/<uuid>.jpg` with the user's session (`upsert: false`); only the key is sent; shown through signed URLs |
 
 ## Feed
 

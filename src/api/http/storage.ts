@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 import { uid } from '@/lib/format';
 
 import { ApiError } from '../errors';
-import type { PostImage } from '../types';
+import type { PostImage, UploadedFeedbackAttachment } from '../types';
 
 /** The API's default community image bucket (`SUPABASE_COMMUNITY_MEDIA_BUCKET`). */
 export const COMMUNITY_MEDIA_BUCKET = 'community-media';
@@ -14,6 +14,8 @@ export const COMMUNITY_MEDIA_BUCKET = 'community-media';
 export const POST_MEDIA_BUCKET = 'post-media';
 /** The API's default profile photo bucket (`SUPABASE_AVATAR_BUCKET`). */
 export const AVATAR_BUCKET = 'avatars';
+/** The API's PRIVATE feedback attachment bucket (`SUPABASE_FEEDBACK_BUCKET`). Never served publicly. */
+export const FEEDBACK_BUCKET = 'feedback-attachments';
 
 export interface ImageLimits {
   /** Storage refuses larger files. */
@@ -28,6 +30,8 @@ export interface ImageLimits {
 export const MEDIA_LIMITS: ImageLimits = { maxBytes: 5 * 1024 * 1024, maxEdge: 1600 };
 /** Profile photos: square, small, well under the avatars bucket's 2 MB limit. */
 export const AVATAR_LIMITS: ImageLimits = { maxBytes: 2 * 1024 * 1024, maxEdge: 512, square: true };
+/** Feedback screenshots: large enough to stay legible, within the bucket's 10 MB limit. */
+export const FEEDBACK_LIMITS: ImageLimits = { maxBytes: 10 * 1024 * 1024, maxEdge: 2400 };
 
 export type DetectedImageFormat = 'jpeg' | 'png' | 'webp' | 'heic' | 'unknown';
 
@@ -315,6 +319,16 @@ export async function processImage(
   return processImageNative(localUri, limits);
 }
 
+/** One ApiError for a refused Storage upload, by HTTP status. `noun` is "Photo", "Image" or "Screenshot". */
+function storageUploadError(error: unknown, noun: string, limitMb: number): ApiError {
+  const status = Number((error as { statusCode?: string | number }).statusCode) || null;
+  if (status === 401) return new ApiError('unauthorized', 'Sign in again to upload photos.', 401);
+  if (status === 403) return new ApiError('forbidden', `You do not have permission to upload this ${noun === 'Screenshot' ? 'screenshot' : 'photo'}.`, 403);
+  if (status === 413) return new ApiError('validation', `${noun} is too large. Please choose an image under ${limitMb} MB.`, 413);
+  if (status && status >= 500) return new ApiError('server', 'Storage server error. Please try again.', status);
+  return new ApiError('network', 'Could not connect to storage. Check your connection and try again.', status);
+}
+
 /**
  * Uploads images straight to Supabase Storage with the signed-in user's own session, as the API
  * expects: into `<user id>/<random name>.jpg` of the bucket (community media, post media, or avatars),
@@ -342,26 +356,7 @@ export function createImageUploader(client: SupabaseClient, bucket: string, limi
     const key = `${userId}/${uid()}.jpg`;
     const { error } = await client.storage.from(bucket).upload(key, bytes, { contentType: 'image/jpeg', upsert: false });
 
-    if (error) {
-      const status = Number((error as { statusCode?: string | number }).statusCode) || null;
-      if (status === 401) {
-        throw new ApiError('unauthorized', 'Sign in again to upload photos.', 401);
-      }
-      if (status === 403) {
-        throw new ApiError('forbidden', 'You do not have permission to upload this photo.', 403);
-      }
-      if (status === 413) {
-        throw new ApiError(
-          'validation',
-          `${isAvatar ? 'Photo' : 'Image'} is too large. Please choose an image under ${limitMb} MB.`,
-          413,
-        );
-      }
-      if (status && status >= 500) {
-        throw new ApiError('server', 'Storage server error. Please try again.', status);
-      }
-      throw new ApiError('network', 'Could not connect to storage. Check your connection and try again.', status);
-    }
+    if (error) throw storageUploadError(error, isAvatar ? 'Photo' : 'Image', limitMb);
 
     return { key, url: client.storage.from(bucket).getPublicUrl(key).data.publicUrl, width, height };
   };
@@ -380,5 +375,45 @@ export function createImageRemover(client: SupabaseClient, bucket: string) {
     if (!userId || !key.startsWith(`${userId}/`) || key.includes('..')) return;
     const { error } = await client.storage.from(bucket).remove([key]);
     if (error) throw new ApiError('network', "The old photo couldn't be removed.");
+  };
+}
+
+/**
+ * Uploads a feedback screenshot into the caller's own folder of the PRIVATE feedback bucket
+ * (`feedback-attachments/<user id>/<uuid>.jpg`), re-encoded as JPEG. No public URL exists; the
+ * key, type and size are sent with the submission, and the API checks the object is the caller's.
+ */
+export function createFeedbackAttachmentUploader(client: SupabaseClient, limits: ImageLimits = FEEDBACK_LIMITS) {
+  return async (localUri: string): Promise<UploadedFeedbackAttachment> => {
+    const { data } = await client.auth.getSession();
+    const userId = data.session?.user.id;
+    if (!userId) throw new ApiError('unauthorized', 'Sign in again to upload screenshots.', 401);
+    const limitMb = Math.round(limits.maxBytes / (1024 * 1024));
+
+    const { bytes } = await processImage(localUri, limits);
+    if (bytes.byteLength > limits.maxBytes) {
+      throw new ApiError('validation', `Screenshot is too large. Please choose an image under ${limitMb} MB.`);
+    }
+
+    const key = `${userId}/${uid()}.jpg`;
+    const { error } = await client.storage.from(FEEDBACK_BUCKET).upload(key, bytes, { contentType: 'image/jpeg', upsert: false });
+    if (error) throw storageUploadError(error, 'Screenshot', limitMb);
+    return { key, mimeType: 'image/jpeg', sizeBytes: bytes.byteLength };
+  };
+}
+
+/**
+ * Signs a URL for one of the caller's own feedback files with their own session (the bucket's
+ * policies let a user read only their own folder). Resolves null when it cannot be signed, so a
+ * missing preview never hides the rest of the submission.
+ */
+export function createFeedbackAttachmentSigner(client: SupabaseClient, expiresInSeconds = 60 * 60) {
+  return async (key: string): Promise<string | null> => {
+    try {
+      const { data, error } = await client.storage.from(FEEDBACK_BUCKET).createSignedUrl(key, expiresInSeconds);
+      return error ? null : (data?.signedUrl ?? null);
+    } catch {
+      return null;
+    }
   };
 }

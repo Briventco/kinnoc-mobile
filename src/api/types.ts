@@ -441,6 +441,8 @@ export type NotificationKind =
   | 'deadline'
   | 'verification'
   | 'message'
+  /** The Kinnoc team replied to the viewer's feedback. */
+  | 'feedback'
   | 'system';
 
 export interface AppNotification {
@@ -553,4 +555,69 @@ export interface ApiCapabilities {
   profileDetails: boolean;
   /** Interests chosen from the backend's catalogue (`profile.setInterests`). */
   interestCatalogue: boolean;
+}
+
+/* ---------- Feedback and suggestions ---------- */
+
+export type FeedbackCategory = 'general' | 'bug' | 'feature' | 'experience';
+
+export type FeedbackStatus = 'received' | 'under-review' | 'in-progress' | 'resolved' | 'closed';
+
+/** Client context sent with bug reports. Read from the app, never typed by the user. */
+export interface FeedbackDevice {
+  appVersion: string | null;
+  platform: 'ios' | 'android' | 'web' | 'other';
+  osVersion: string | null;
+}
+
+/** A file in the private feedback bucket that storage has accepted. */
+export interface UploadedFeedbackAttachment {
+  key: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface FeedbackAttachment extends UploadedFeedbackAttachment {
+  /** A short-lived signed URL to show it, or null when it cannot be shown. */
+  url: string | null;
+}
+
+/** A reply from the Kinnoc team. Shown as "Kinnoc team", never with an administrator's identity. */
+export interface FeedbackResponse {
+  id: ID;
+  body: string;
+  createdAt: ISODate;
+}
+
+/** One of the viewer's own submissions, as listed in their history. */
+export interface FeedbackSummary {
+  id: ID;
+  category: FeedbackCategory;
+  subject: string;
+  status: FeedbackStatus;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+  responseCount: number;
+}
+
+/**
+ * A submission as its sender may see it. Internal notes, assignment and the activity log are
+ * administrators only and have no place in this type.
+ */
+export interface FeedbackDetail extends FeedbackSummary {
+  description: string;
+  device: FeedbackDevice | null;
+  attachments: FeedbackAttachment[];
+  /** Oldest first. */
+  responses: FeedbackResponse[];
+}
+
+export interface FeedbackInput {
+  /** Idempotency key: a retried submit returns the original submission. */
+  clientId: string;
+  category: FeedbackCategory;
+  subject: string;
+  description: string;
+  attachments: UploadedFeedbackAttachment[];
+  device: FeedbackDevice | null;
 }

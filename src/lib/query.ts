@@ -59,4 +59,7 @@ export const keys = {
   stories: ['stories'] as const,
   verification: (username: string) => ['verification', username.toLowerCase()] as const,
   myVerification: ['verification', 'me'] as const,
+  feedbackAll: ['feedback'] as const,
+  myFeedback: ['feedback', 'mine'] as const,
+  feedback: (id: string) => ['feedback', 'item', id] as const,
 };

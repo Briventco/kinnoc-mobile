@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { Bell, Bookmark, Code, FileText, LogOut, Shield, UserPen } from 'lucide-react-native';
+import { Bell, Bookmark, Code, FileText, LogOut, MessageSquareHeart, Shield, UserPen } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,6 +41,14 @@ export default function Settings() {
         ) : null}
         <SettingSection title="Privacy">
           <SettingRow icon={Shield} label="Privacy and safety" onPress={() => router.push('/settings/privacy')} />
+        </SettingSection>
+        <SettingSection title="Help and support">
+          <SettingRow
+            icon={MessageSquareHeart}
+            label="Feedback and suggestions"
+            detail="Report a bug, suggest a feature or tell us what you think"
+            onPress={() => router.push('/feedback')}
+          />
         </SettingSection>
         {env.legal ? (
           <SettingSection title="Legal">
