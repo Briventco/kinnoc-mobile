@@ -10,10 +10,15 @@ import type {
   CommentInput,
   Community,
   CommunityBrowseFilter,
+  CommunityGroup,
+  CommunityGroupInput,
+  CommunityGroupMember,
+  CommunityGroupsList,
   CommunityInput,
   CommunityMember,
   CommunityRole,
   CommunitySummary,
+  GroupRole,
   CreateProfileInput,
   CreatePostInput,
   DiscoverFilter,
@@ -201,5 +206,28 @@ export interface KinnocApi {
     get(id: ID): Promise<FeedbackDetail>;
     /** Uploads a local screenshot to the private feedback bucket. Resolves once storage has accepted it. */
     uploadAttachment(localUri: string): Promise<UploadedFeedbackAttachment>;
+  };
+  /**
+   * Sub-groups inside a community (WhatsApp Communities-style).
+   * See docs/community-groups.md for the proposed backend API contract.
+   */
+  groups: {
+    list(communityId: ID): Promise<CommunityGroupsList>;
+    get(communityId: ID, groupId: ID): Promise<CommunityGroup>;
+    create(communityId: ID, input: CommunityGroupInput): Promise<CommunityGroup>;
+    update(communityId: ID, groupId: ID, changes: Partial<CommunityGroupInput>): Promise<CommunityGroup>;
+    remove(communityId: ID, groupId: ID): Promise<void>;
+    join(communityId: ID, groupId: ID): Promise<CommunityGroup>;
+    leave(communityId: ID, groupId: ID): Promise<void>;
+    members(communityId: ID, groupId: ID, cursor: string | null): Promise<Page<CommunityGroupMember>>;
+    addMember(communityId: ID, groupId: ID, username: string, role?: GroupRole): Promise<CommunityGroupMember>;
+    setMemberRole(communityId: ID, groupId: ID, username: string, role: GroupRole): Promise<CommunityGroupMember>;
+    removeMember(communityId: ID, groupId: ID, username: string): Promise<void>;
+    markRead(communityId: ID, groupId: ID, lastMessageId: ID | null): Promise<void>;
+    setMuted(communityId: ID, groupId: ID, muted: boolean): Promise<void>;
+    messages(communityId: ID, groupId: ID, cursor: string | null): Promise<MessagePage>;
+    messagesSince(communityId: ID, groupId: ID, seq: number): Promise<MessagePage>;
+    sendMessage(communityId: ID, groupId: ID, input: Omit<SendMessageInput, 'communityId'>): Promise<Message>;
+    removeMessage(communityId: ID, groupId: ID, messageId: ID): Promise<void>;
   };
 }

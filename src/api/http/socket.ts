@@ -27,7 +27,12 @@ const MAX_HANDSHAKE_RETRIES = 4;
 /** Live messages arriving within this window share one `delivered` acknowledgement. */
 const DELIVERED_BATCH_MS = 500;
 /** Refusals that mean the conversation is closed to the viewer: stop acknowledging it. */
-const ACCESS_ENDED = new Set(['MEMBERSHIP_REQUIRED', 'COMMUNITY_NOT_FOUND']);
+const ACCESS_ENDED = new Set(['MEMBERSHIP_REQUIRED', 'GROUP_MEMBERSHIP_REQUIRED', 'COMMUNITY_NOT_FOUND', 'GROUP_NOT_FOUND']);
+const GROUP_PREFIX = 'group:';
+const isGroupChannel = (id: string) => id.startsWith(GROUP_PREFIX);
+const groupChannelId = (groupId: string) => `${GROUP_PREFIX}${groupId}`;
+const channelTarget = (id: string): { communityId?: string; groupId?: string } =>
+  isGroupChannel(id) ? { groupId: id.slice(GROUP_PREFIX.length) } : { communityId: id };
 
 /**
  * Community chat over the API's Socket.IO gateway (docs/chat.md section 5).
@@ -61,11 +66,13 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
   const listeners = new Map<string, Set<Listener>>();
   const notificationListeners = new Set<(event: { type: 'new' | 'read'; unreadCount: number }) => void>();
   const statusListeners = new Set<(s: RealtimeStatus) => void>();
-  /** communityId → username → who is typing and when it lapses. */
+  /** communityId -> default groupId learned from subscribe ack, so non-default group broadcasts do not leak into community chat. */
+  const defaultGroupByCommunity = new Map<string, string>();
+  /** channelId (`communityId` or `group:<id>`) -> username -> who is typing and when it lapses. */
   const typing = new Map<string, Map<string, { name: string; timer: ReturnType<typeof setTimeout> }>>();
-  /** communityId → highest `seq` received live and not yet sent as `delivered`. */
+  /** channelId -> highest `seq` received live and not yet sent as `delivered`. */
   const deliveredPending = new Map<string, number>();
-  /** communityId → highest `seq` the server has acknowledged as delivered. */
+  /** channelId -> highest `seq` the server has acknowledged as delivered. */
   const deliveredAcked = new Map<string, number>();
   const deliveredInFlight = new Set<string>();
   let deliveredTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,7 +85,20 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     statusListeners.forEach((fn) => fn(next));
   };
 
-  const emitTo = (communityId: string, event: ConversationEvent) => listeners.get(communityId)?.forEach((fn) => fn(event));
+  const emitTo = (channelId: string, event: ConversationEvent) => listeners.get(channelId)?.forEach((fn) => fn(event));
+
+  const targetsFor = (communityId: string, groupId?: string): string[] => {
+    const targets: string[] = [];
+    if (groupId) {
+      const gChannel = groupChannelId(groupId);
+      if (listeners.has(gChannel)) targets.push(gChannel);
+    }
+    const defaultGroup = defaultGroupByCommunity.get(communityId);
+    if (listeners.has(communityId) && (!groupId || !defaultGroup || defaultGroup === groupId)) {
+      targets.push(communityId);
+    }
+    return targets;
+  };
 
   const emitTyping = (communityId: string) =>
     emitTo(communityId, { type: 'typing', communityId, names: [...(typing.get(communityId)?.values() ?? [])].map((t) => t.name) });
@@ -125,47 +145,53 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     // Offline: the pending positions wait (one per community) and go out on the next connect.
     if (!s?.connected) return;
     const current = session;
-    for (const [communityId, seq] of deliveredPending) {
-      if (deliveredInFlight.has(communityId)) continue;
-      deliveredPending.delete(communityId);
-      deliveredInFlight.add(communityId);
-      (s.timeout(ACK_TIMEOUT_MS).emitWithAck('delivered', { communityId, seq }) as Promise<Ack<unknown>>)
+    for (const [channelId, seq] of deliveredPending) {
+      if (deliveredInFlight.has(channelId)) continue;
+      deliveredPending.delete(channelId);
+      deliveredInFlight.add(channelId);
+      (s.timeout(ACK_TIMEOUT_MS).emitWithAck('delivered', { ...channelTarget(channelId), seq }) as Promise<Ack<unknown>>)
         .then(
           (ack) => {
             if (current !== session) return;
-            if (ack.ok) deliveredAcked.set(communityId, Math.max(seq, deliveredAcked.get(communityId) ?? 0));
-            else if (ACCESS_ENDED.has(ack.error.code)) forgetDelivered(communityId);
+            if (ack.ok) deliveredAcked.set(channelId, Math.max(seq, deliveredAcked.get(channelId) ?? 0));
+            else if (ACCESS_ENDED.has(ack.error.code)) forgetDelivered(channelId);
             // Other refusals (validation) would only repeat; the next live message tries again.
           },
           () => {
             // No acknowledgement in time: send it again with the next batch or after reconnecting.
-            if (current === session && seq > deliveredUpTo(communityId)) deliveredPending.set(communityId, seq);
+            if (current === session && seq > deliveredUpTo(channelId)) deliveredPending.set(channelId, seq);
           },
         )
         .finally(() => {
           if (current !== session) return;
-          deliveredInFlight.delete(communityId);
+          deliveredInFlight.delete(channelId);
           // Newer messages arrived while this one was in flight.
-          if (deliveredPending.has(communityId) && socket?.connected) scheduleDelivered();
+          if (deliveredPending.has(channelId) && socket?.connected) scheduleDelivered();
         });
     }
   }
 
-  async function join(communityId: string) {
+  async function join(channelId: string) {
     const s = socket;
     if (!s?.connected) return;
+    const target = channelTarget(channelId);
     try {
-      const ack = (await s.timeout(ACK_TIMEOUT_MS).emitWithAck('subscribe', { communityId })) as Ack<{
+      const ack = (await s.timeout(ACK_TIMEOUT_MS).emitWithAck('subscribe', target)) as Ack<{
+        communityId?: string;
+        groupId?: string;
         lastSeq: number;
         receipts?: ApiReceipts | null;
       }>;
-      if (!listeners.has(communityId)) {
+      if (!listeners.has(channelId)) {
         // Left while the subscription was in flight.
-        s.emit('unsubscribe', { communityId });
+        s.emit('unsubscribe', target);
         return;
       }
+      if (ack.ok && !isGroupChannel(channelId) && ack.data.groupId) {
+        defaultGroupByCommunity.set(channelId, ack.data.groupId);
+      }
       emitTo(
-        communityId,
+        channelId,
         ack.ok ? { type: 'subscribed', lastSeq: ack.data.lastSeq, receipts: toReceipts(ack.data.receipts) } : { type: 'error', code: ack.error.code },
       );
     } catch {
@@ -232,36 +258,49 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     s.on('session:expired', () => {
       refreshNext = true;
     });
-    s.on('message', ({ communityId, message }: { communityId: string; message: ApiMessage }) => {
-      if (message.sender) stopTyping(communityId, message.sender.username);
-      if (!listeners.has(communityId)) return;
-      emitTo(communityId, { type: 'message', message: toMessage(message) });
-      // The sender's own positions advance when they send; only others' messages need acknowledging.
-      if (!message.isMine && Number.isInteger(message.seq)) noteDelivered(communityId, message.seq);
+    s.on('message', ({ communityId, groupId, message }: { communityId: string; groupId?: string; message: ApiMessage }) => {
+      const targets = targetsFor(communityId, groupId);
+      for (const target of targets) {
+        if (message.sender) stopTyping(target, message.sender.username);
+        emitTo(target, { type: 'message', message: toMessage(message) });
+        // The sender's own positions advance when they send; only others' messages need acknowledging.
+        if (!message.isMine && Number.isInteger(message.seq)) noteDelivered(target, message.seq);
+      }
     });
-    s.on('message:deleted', ({ communityId, messageId }: { communityId: string; messageId: string }) =>
-      emitTo(communityId, { type: 'deleted', messageId }),
-    );
-    s.on('typing', ({ communityId, user }: { communityId: string; user: { username: string | null; displayName: string | null } }) => {
-      if (!listeners.has(communityId) || !user.username) return;
-      const people = typing.get(communityId) ?? new Map();
-      typing.set(communityId, people);
-      const previous = people.get(user.username);
-      if (previous) clearTimeout(previous.timer);
-      const name = (user.displayName ?? user.username).split(' ')[0];
-      people.set(user.username, { name, timer: setTimeout(() => stopTyping(communityId, user.username!), TYPING_TTL_MS) });
-      emitTyping(communityId);
+    s.on('message:deleted', ({ communityId, groupId, messageId }: { communityId: string; groupId?: string; messageId: string }) => {
+      for (const target of targetsFor(communityId, groupId)) {
+        emitTo(target, { type: 'deleted', messageId });
+      }
     });
-    s.on('read', ({ communityId, lastReadSeq }: { communityId: string; lastReadSeq: number }) =>
-      emitTo(communityId, { type: 'read', communityId, lastReadSeq }),
-    );
-    s.on('receipts', ({ communityId, ...raw }: { communityId: string } & ApiReceipts) => {
+    s.on('typing', ({ communityId, groupId, user }: { communityId: string; groupId?: string; user: { username: string | null; displayName: string | null } }) => {
+      if (!user.username) return;
+      for (const target of targetsFor(communityId, groupId)) {
+        const people = typing.get(target) ?? new Map();
+        typing.set(target, people);
+        const previous = people.get(user.username);
+        if (previous) clearTimeout(previous.timer);
+        const name = (user.displayName ?? user.username).split(' ')[0];
+        people.set(user.username, { name, timer: setTimeout(() => stopTyping(target, user.username!), TYPING_TTL_MS) });
+        emitTyping(target);
+      }
+    });
+    s.on('read', ({ communityId, groupId, lastReadSeq }: { communityId: string; groupId?: string; lastReadSeq: number }) => {
+      for (const target of targetsFor(communityId, groupId)) {
+        emitTo(target, { type: 'read', communityId: target, lastReadSeq });
+      }
+    });
+    s.on('receipts', ({ communityId, groupId, ...raw }: { communityId: string; groupId?: string } & ApiReceipts) => {
       const receipts = toReceipts(raw);
-      if (receipts) emitTo(communityId, { type: 'receipts', receipts });
+      if (!receipts) return;
+      for (const target of targetsFor(communityId, groupId)) {
+        emitTo(target, { type: 'receipts', receipts });
+      }
     });
-    s.on('subscription:ended', ({ communityId }: { communityId: string }) => {
-      forgetDelivered(communityId);
-      emitTo(communityId, { type: 'ended' });
+    s.on('subscription:ended', ({ communityId, groupId }: { communityId: string; groupId?: string }) => {
+      for (const target of targetsFor(communityId, groupId)) {
+        forgetDelivered(target);
+        emitTo(target, { type: 'ended' });
+      }
     });
     s.on('notification:new', (data: { unreadCount: number }) => {
       notificationListeners.forEach((fn) => fn({ type: 'new', unreadCount: data.unreadCount }));
@@ -323,7 +362,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
         listeners.delete(communityId);
         stopTyping(communityId);
         typing.delete(communityId);
-        if (socket?.connected) socket.emit('unsubscribe', { communityId });
+        if (socket?.connected) socket.emit('unsubscribe', channelTarget(communityId));
         if (!listeners.size && !notificationListeners.size) idleTimer = setTimeout(close, IDLE_DISCONNECT_MS);
       };
     },
@@ -338,7 +377,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
       };
     },
     sendTyping(communityId) {
-      if (socket?.connected && listeners.has(communityId)) socket.emit('typing', { communityId }, () => {});
+      if (socket?.connected && listeners.has(communityId)) socket.emit('typing', channelTarget(communityId), () => {});
     },
     status: () => status,
     onStatus(listener) {
@@ -348,6 +387,7 @@ export function createSocketRealtime(options: SocketRealtimeOptions): RealtimeCl
     reset() {
       session += 1;
       listeners.clear();
+      defaultGroupByCommunity.clear();
       deliveredPending.clear();
       deliveredAcked.clear();
       deliveredInFlight.clear();
