@@ -86,7 +86,7 @@ export function useCommunity(id: string, enabled = true) {
 export function useMyCommunities(status: 'invited' | 'pending') {
   return useQuery({
     queryKey: keys.myCommunities(status),
-    queryFn: async () => (await api.communities.mine(status, null)).items,
+    queryFn: async () => (await api.communities.mine(status, null)).items ?? [],
     refetchInterval: INBOX_POLL_MS,
   });
 }
