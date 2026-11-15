@@ -113,7 +113,13 @@ function Pending() {
                   onPress={() =>
                     join.mutate(c.id, {
                       onSuccess: (next) =>
-                        toast.show({ message: `You joined ${next.name}`, action: { label: 'Open', onPress: () => openChat(next.id) } }),
+                        toast.show({
+                          message: `You joined ${next.name}`,
+                          action: {
+                            label: 'Open',
+                            onPress: () => (api.capabilities.communityGroups ? openInfo(next.id) : openChat(next.id)),
+                          },
+                        }),
                       onError: (e) => toast.show({ message: `Couldn't join. ${describeError(e)}` }),
                     })
                   }
@@ -164,7 +170,11 @@ function Inbox({ filter, query, onDiscover }: { filter: 'all' | 'unread'; query:
     ...(entry.unreadCount
       ? [{ label: 'Mark as read', icon: CheckCheck, onPress: () => markRead.mutate({ id: entry.community.id, lastMessageId: null }) }]
       : []),
-    { label: 'Community info', icon: Info, onPress: () => openInfo(entry.community.id) },
+    {
+      label: api.capabilities.communityGroups ? 'Community & groups' : 'Community info',
+      icon: Info,
+      onPress: () => openInfo(entry.community.id),
+    },
   ];
 
   return (
@@ -172,7 +182,13 @@ function Inbox({ filter, query, onDiscover }: { filter: 'all' | 'unread'; query:
       <FlatList
         data={rows}
         keyExtractor={(e) => e.community.id}
-        renderItem={({ item }) => <InboxRow entry={item} onPress={() => openChat(item.community.id)} onLongPress={() => setMenuFor(item)} />}
+        renderItem={({ item }) => (
+          <InboxRow
+            entry={item}
+            onPress={() => (api.capabilities.communityGroups ? openInfo(item.community.id) : openChat(item.community.id))}
+            onLongPress={() => setMenuFor(item)}
+          />
+        )}
         ItemSeparatorComponent={() => <Hairline inset={ROW_INSET} />}
         ListHeaderComponent={
           <>

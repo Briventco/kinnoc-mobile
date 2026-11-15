@@ -150,8 +150,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       inboxPreferences: false,
       profileDetails: false,
       interestCatalogue: true,
-      // Proposed community groups routes (docs/community-groups.md) are not deployed on the backend yet.
-      communityGroups: false,
+      communityGroups: true,
       groupMute: false,
     },
     account: {
