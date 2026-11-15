@@ -414,5 +414,60 @@ describe('createSocketRealtime', () => {
       expect(sockets[0].delivered()).toEqual([]);
       expect(sockets[1].delivered()).toEqual([]);
     });
+
+    it('routes groupId subscriptions, typing, receipts, delivered acks, and membership-ended independently of communityId', async () => {
+      jest.useFakeTimers({ advanceTimers: true });
+      const { realtime, sockets, listen, events } = setup();
+      const groupEvents: ConversationEvent[] = [];
+      const GROUP_DEFAULT = '11111111-1111-4111-8111-111111111111';
+      const GROUP_SUB = '22222222-2222-4222-8222-222222222222';
+
+      const unsubCommunity = realtime.subscribe(COMMUNITY, listen);
+      const unsubGroup = realtime.subscribe(`group:${GROUP_SUB}`, (e) => groupEvents.push(e));
+      sockets[0].subscribeAck = (cid) =>
+        cid
+          ? { ok: true, data: { communityId: cid, groupId: GROUP_DEFAULT, lastSeq: 10 } }
+          : { ok: true, data: { communityId: COMMUNITY, groupId: GROUP_SUB, lastSeq: 5 } };
+      await sockets[0].open();
+      await flush();
+
+      expect(sockets[0].emitted.filter((e) => e.event === 'subscribe').map((e) => e.payload)).toEqual([
+        { communityId: COMMUNITY },
+        { groupId: GROUP_SUB },
+      ]);
+
+      realtime.sendTyping(`group:${GROUP_SUB}`);
+      expect(sockets[0].emitted.some((e) => e.event === 'typing' && (e.payload as { groupId?: string }).groupId === GROUP_SUB)).toBe(true);
+
+      const communityCountBefore = events.length;
+      sockets[0].receive('message', {
+        communityId: COMMUNITY,
+        groupId: GROUP_SUB,
+        message: apiMessage({ id: 'gm_1', communityId: COMMUNITY, seq: 6, isMine: false, text: 'Group only' }),
+      });
+      sockets[0].receive('typing', {
+        communityId: COMMUNITY,
+        groupId: GROUP_SUB,
+        user: { username: 'ada', displayName: 'Adaeze' },
+      });
+      sockets[0].receive('receipts', { communityId: COMMUNITY, groupId: GROUP_SUB, deliveredSeq: 6, readSeq: 4 });
+
+      // Non-default group events must NOT leak into the parent community's default chat listener.
+      expect(events.length).toBe(communityCountBefore);
+      expect(groupEvents.some((e) => e.type === 'message' && e.message.text === 'Group only')).toBe(true);
+      expect(groupEvents.some((e) => e.type === 'typing' && e.names.includes('Adaeze'))).toBe(true);
+      expect(groupEvents.some((e) => e.type === 'receipts' && e.receipts.readSeq === 4)).toBe(true);
+
+      jest.advanceTimersByTime(500);
+      await flush();
+      expect(sockets[0].delivered()).toContainEqual({ groupId: GROUP_SUB, seq: 6 });
+
+      sockets[0].receive('subscription:ended', { communityId: COMMUNITY, groupId: GROUP_SUB });
+      expect(groupEvents.some((e) => e.type === 'ended')).toBe(true);
+      expect(events.length).toBe(communityCountBefore);
+
+      unsubGroup();
+      unsubCommunity();
+    });
   });
 });

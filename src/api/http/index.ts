@@ -2,6 +2,7 @@ import type { KinnocApi } from '../contract';
 import { ApiError, isApiError, unsupported } from '../errors';
 import type { Category, FeedbackDetail, Page, PostImage, UploadedFeedbackAttachment, UploadedImage } from '../types';
 import type { HttpClient } from './client';
+import { createHttpGroupsApi } from './groups';
 import {
   type ApiAccount,
   type ApiComment,
@@ -151,6 +152,9 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       inboxPreferences: false,
       profileDetails: false,
       interestCatalogue: true,
+      // Proposed community groups routes (docs/community-groups.md) are not deployed on the backend yet.
+      communityGroups: false,
+      groupMute: false,
     },
     account: {
       load: async () => {
@@ -430,5 +434,6 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
       get: async (id) => withAttachmentUrls(toFeedbackDetail(await feedbackRoute(() => client.get<ApiFeedback>(FEEDBACK_ROUTES.get(id))))),
       uploadAttachment: options.uploadFeedbackAttachment ?? notAvailable('Screenshot upload'),
     },
+    groups: createHttpGroupsApi(client),
   };
 }

@@ -575,6 +575,67 @@ export interface ApiCapabilities {
   profileDetails: boolean;
   /** Interests chosen from the backend's catalogue (`profile.setInterests`). */
   interestCatalogue: boolean;
+  /** Sub-groups inside communities (WhatsApp Communities-style). */
+  communityGroups: boolean;
+  /** Group-level notification mute endpoint. */
+  groupMute: boolean;
+}
+
+/* ---------- Community Groups ---------- */
+
+export type GroupJoinPolicy = 'open' | 'approval' | 'invite-only';
+export type GroupMembershipStatus = 'none' | 'member' | 'pending';
+export type GroupRole = 'admin' | 'member';
+
+/** Backend-enforced permissions for the signed-in viewer within a group. */
+export interface GroupPermissions {
+  canJoin: boolean;
+  canLeave: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canManageMembers: boolean;
+  canSendMessages: boolean;
+}
+
+export interface CommunityGroup {
+  id: ID;
+  communityId: ID;
+  name: string;
+  description: string;
+  monogram: string;
+  photoUrl: string | null;
+  /** Optional icon token when no custom photo is set (e.g. 'megaphone', 'sparkles', 'users'). */
+  iconName: string | null;
+  memberCount: number;
+  joinPolicy: GroupJoinPolicy;
+  membership: GroupMembershipStatus;
+  role: GroupRole | null;
+  unreadCount: number;
+  isMuted: boolean;
+  isDefault: boolean;
+  lastMessage: InboxEntry['lastMessage'];
+  receipts: Receipts | null;
+  permissions: GroupPermissions;
+  createdAt: ISODate;
+}
+
+export interface CommunityGroupsList {
+  items: CommunityGroup[];
+  /** Backend-granted permission to create new groups inside this community. */
+  canCreateGroup: boolean;
+}
+
+export interface CommunityGroupInput {
+  name: string;
+  description: string;
+  joinPolicy: GroupJoinPolicy;
+  avatarKey?: string | null;
+  iconName?: string | null;
+}
+
+export interface CommunityGroupMember extends Person {
+  role: GroupRole;
+  joinedAt: ISODate;
 }
 
 /* ---------- Feedback and suggestions ---------- */

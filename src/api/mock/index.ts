@@ -14,6 +14,8 @@ import type { ConversationEvent, RealtimeClient } from '../realtime';
 import type {
   Comment,
   Community,
+  CommunityGroup,
+  CommunityGroupMember,
   CommunityMember,
   CommunityRole,
   CommunitySummary,
@@ -21,6 +23,7 @@ import type {
   FeedbackDetail,
   FeedbackSummary,
   FeedItem,
+  GroupRole,
   InboxEntry,
   Invitation,
   InvitationPreview,
@@ -86,6 +89,9 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
     joinRequests: {} as Record<string, JoinRequest[]>,
     invitations: {} as Record<string, Invitation[]>,
     feedback: clone(fx.feedback),
+    groups: clone(fx.communityGroups),
+    groupMessages: clone(fx.groupMessages),
+    groupMembers: clone(fx.groupMembers),
   };
   // Sequence numbers in send order, as the server assigns them.
   for (const list of Object.values(state.messages)) list.forEach((m, i) => (m.seq = i + 1));
@@ -150,6 +156,10 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       const m = list.find((x) => x.id === id);
       if (m) return m;
     }
+    for (const list of Object.values(state.groupMessages)) {
+      const m = list.find((x) => x.id === id);
+      if (m) return m;
+    }
     throw new ApiError('not_found', 'Message not found', 404);
   };
   const isSaved = (kind: 'post' | 'discover', id: string) => state.saved.some((s) => s.kind === kind && s.id === id);
@@ -198,6 +208,8 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       inboxPreferences: true,
       profileDetails: true,
       interestCatalogue: false,
+      communityGroups: true,
+      groupMute: true,
     },
     account: {
       async load() {
@@ -590,6 +602,11 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
         const c = findCommunity(id);
         assertRole(c, ['owner', 'moderator']);
         state.invitations[c.id] = state.invitations[c.id].filter((i) => i.user.username !== username);
+        for (const [token, entry] of inviteTokens.entries()) {
+          if (entry.communityId === c.id && entry.targetUsername === username.toLowerCase()) {
+            inviteTokens.delete(token);
+          }
+        }
       },
       async setMuted(id, muted) {
         await delay(200);
@@ -955,6 +972,267 @@ export function createMockBackend(getViewer: () => MockViewer | null) {
       async uploadAttachment(localUri) {
         await delay(300);
         return { key: localUri, mimeType: 'image/jpeg', sizeBytes: 1 };
+      },
+    },
+    groups: {
+      async list(communityId) {
+        await delay(180);
+        const c = state.communities.find((x) => x.id === communityId || x.slug === communityId);
+        if (!c) throw new ApiError('not_found', 'Community not found', 404, {}, 'COMMUNITY_NOT_FOUND');
+        const items = state.groups.filter((g) => g.communityId === c.id);
+        const canCreateGroup = c.role === 'owner' || c.role === 'moderator';
+        return { items: clone(items), canCreateGroup };
+      },
+      async get(communityId, groupId) {
+        await delay(150);
+        const c = state.communities.find((x) => x.id === communityId || x.slug === communityId);
+        const g = state.groups.find((x) => x.id === groupId && (!c || x.communityId === c.id));
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        return clone(g);
+      },
+      async create(communityId, input) {
+        await delay(250);
+        const c = state.communities.find((x) => x.id === communityId || x.slug === communityId);
+        if (!c) throw new ApiError('not_found', 'Community not found', 404, {}, 'COMMUNITY_NOT_FOUND');
+        if (c.role !== 'owner' && c.role !== 'moderator') {
+          throw new ApiError('forbidden', 'Only community admins can create groups', 403);
+        }
+        const id = `g_${Date.now()}`;
+        const monogram = input.name
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((w) => w[0]?.toUpperCase() ?? '')
+          .join('') || 'G';
+        const created: CommunityGroup = {
+          id,
+          communityId: c.id,
+          name: input.name.trim(),
+          description: input.description.trim(),
+          monogram,
+          photoUrl: input.avatarKey ?? null,
+          iconName: input.iconName ?? 'users',
+          memberCount: 1,
+          joinPolicy: input.joinPolicy,
+          membership: 'member',
+          role: 'admin',
+          unreadCount: 0,
+          isMuted: false,
+          isDefault: false,
+          lastMessage: null,
+          receipts: { deliveredSeq: 0, readSeq: 0 },
+          permissions: {
+            canJoin: false,
+            canLeave: true,
+            canEdit: true,
+            canDelete: true,
+            canManageMembers: true,
+            canSendMessages: true,
+          },
+          createdAt: new Date().toISOString(),
+        };
+        state.groups.push(created);
+        state.groupMessages[id] = [];
+        state.groupMembers[id] = [];
+        return clone(created);
+      },
+      async update(communityId, groupId, changes) {
+        await delay(220);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canEdit) throw new ApiError('forbidden', 'Not allowed to edit this group', 403);
+        if (changes.name !== undefined) {
+          g.name = changes.name.trim();
+          g.monogram =
+            g.name
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((w) => w[0]?.toUpperCase() ?? '')
+              .join('') || g.monogram;
+        }
+        if (changes.description !== undefined) g.description = changes.description.trim();
+        if (changes.joinPolicy !== undefined) g.joinPolicy = changes.joinPolicy;
+        if (changes.avatarKey !== undefined) g.photoUrl = changes.avatarKey;
+        if (changes.iconName !== undefined) g.iconName = changes.iconName;
+        return clone(g);
+      },
+      async remove(communityId, groupId) {
+        await delay(220);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canDelete) throw new ApiError('forbidden', 'Not allowed to delete this group', 403);
+        state.groups = state.groups.filter((x) => x.id !== groupId);
+        delete state.groupMessages[groupId];
+        delete state.groupMembers[groupId];
+      },
+      async join(communityId, groupId) {
+        await delay(220);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (g.membership === 'member') return clone(g);
+        if (g.joinPolicy === 'invite-only') {
+          throw new ApiError('forbidden', 'This group is invite-only', 403);
+        }
+        if (g.joinPolicy === 'approval') {
+          g.membership = 'pending';
+          g.permissions = { ...g.permissions, canJoin: false };
+          return clone(g);
+        }
+        g.membership = 'member';
+        g.role = 'member';
+        g.memberCount += 1;
+        g.permissions = { ...g.permissions, canJoin: false, canLeave: true, canSendMessages: true };
+        return clone(g);
+      },
+      async leave(communityId, groupId) {
+        await delay(200);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canLeave) throw new ApiError('forbidden', 'You cannot leave this group', 403);
+        g.membership = 'none';
+        g.role = null;
+        g.memberCount = Math.max(0, g.memberCount - 1);
+        g.permissions = {
+          ...g.permissions,
+          canJoin: g.joinPolicy !== 'invite-only',
+          canLeave: false,
+          canSendMessages: false,
+        };
+      },
+      async members(communityId, groupId, cursor) {
+        await delay(180);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        const list = [...(state.groupMembers[groupId] ?? [])];
+        if (g.membership === 'member') {
+          const p = me();
+          list.unshift({
+            username: p.username,
+            displayName: p.displayName,
+            avatarUrl: p.avatarUrl,
+            role: g.role ?? 'member',
+            joinedAt: g.createdAt,
+          });
+        }
+        return clone(paginate(list, cursor, 25));
+      },
+      async addMember(communityId, groupId, username, role = 'member') {
+        await delay(200);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canManageMembers) throw new ApiError('forbidden', 'Not allowed', 403);
+        const person = people.find((p) => p.username.toLowerCase() === username.toLowerCase());
+        if (!person) throw new ApiError('not_found', 'User not found', 404);
+        const list = (state.groupMembers[groupId] ??= []);
+        const existing = list.find((m) => m.username === person.username);
+        if (existing) return clone(existing);
+        const added: CommunityGroupMember = { ...person, role, joinedAt: new Date().toISOString() };
+        list.push(added);
+        g.memberCount += 1;
+        return clone(added);
+      },
+      async setMemberRole(communityId, groupId, username, role) {
+        await delay(200);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canManageMembers) throw new ApiError('forbidden', 'Not allowed', 403);
+        const member = (state.groupMembers[groupId] ?? []).find((m) => m.username === username);
+        if (!member) throw new ApiError('not_found', 'Member not found', 404);
+        member.role = role as GroupRole;
+        return clone(member);
+      },
+      async removeMember(communityId, groupId, username) {
+        await delay(200);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (!g.permissions.canManageMembers) throw new ApiError('forbidden', 'Not allowed', 403);
+        state.groupMembers[groupId] = (state.groupMembers[groupId] ?? []).filter((m) => m.username !== username);
+        g.memberCount = Math.max(0, g.memberCount - 1);
+      },
+      async markRead(communityId, groupId) {
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (g) g.unreadCount = 0;
+      },
+      async setMuted(communityId, groupId, muted) {
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (g) g.isMuted = muted;
+      },
+      async messages(communityId, groupId, cursor) {
+        await delay(180);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (g.membership !== 'member') throw new ApiError('forbidden', 'Join this group to view messages', 403, {}, 'MEMBERSHIP_REQUIRED');
+        const list = [...(state.groupMessages[groupId] ?? [])].reverse();
+        const page = paginate(list, cursor, 30);
+        return clone({ ...page, receipts: g.receipts });
+      },
+      async messagesSince(communityId, groupId, seq) {
+        await delay(120);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        const newer = (state.groupMessages[groupId] ?? []).filter((m) => (m.seq ?? 0) > seq);
+        return clone({ items: newer, nextCursor: null, receipts: g.receipts });
+      },
+      async sendMessage(communityId, groupId, { clientId, text, replyToId, attachmentUris }) {
+        await delay(220);
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (!g) throw new ApiError('not_found', 'Group not found', 404, {}, 'GROUP_NOT_FOUND');
+        if (g.membership !== 'member' || !g.permissions.canSendMessages) {
+          throw new ApiError('forbidden', 'Not allowed to send messages in this group', 403);
+        }
+        if (text.includes('/fail')) throw new ApiError('network', 'Simulated send failure');
+        const list = (state.groupMessages[groupId] ??= []);
+        const existing = list.find((m) => m.clientId === clientId);
+        if (existing) return clone(existing);
+        const p = me();
+        const seq = list.reduce((max, m) => Math.max(max, m.seq ?? 0), 0) + 1;
+        const replyTo = replyToId ? findMessage(replyToId) : null;
+        const message: Message = {
+          id: `gm_${Date.now()}`,
+          clientId,
+          communityId: groupId,
+          seq,
+          sender: { username: p.username, displayName: p.displayName, avatarUrl: p.avatarUrl },
+          isMine: true,
+          text,
+          sentAt: new Date().toISOString(),
+          deletedAt: null,
+          replyTo: replyTo
+            ? { id: replyTo.id, senderName: replyTo.sender?.displayName ?? 'Former member', text: replyTo.text }
+            : null,
+          attachments: (attachmentUris ?? []).map((uri, i) => ({
+            id: `${clientId}_${i}`,
+            kind: 'image' as const,
+            url: uri,
+            width: 1200,
+            height: 900,
+          })),
+          link: null,
+          reactions: [],
+          status: 'sent',
+        };
+        list.push(message);
+        g.lastMessage = {
+          seq,
+          senderName: p.displayName,
+          isMine: true,
+          text: message.text,
+          kind: message.attachments.length ? 'photo' : 'text',
+          sentAt: message.sentAt,
+        };
+        g.receipts = { deliveredSeq: seq, readSeq: g.receipts?.readSeq ?? 0 };
+        return clone(message);
+      },
+      async removeMessage(communityId, groupId, messageId) {
+        await delay(180);
+        const m = findMessage(messageId);
+        m.deletedAt ??= new Date().toISOString();
+        m.text = '';
+        m.attachments = [];
+        const g = state.groups.find((x) => x.id === groupId && x.communityId === communityId);
+        if (g && g.lastMessage?.seq === m.seq) {
+          g.lastMessage = { ...g.lastMessage, text: 'Message deleted' };
+        }
       },
     },
   };
