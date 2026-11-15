@@ -268,6 +268,23 @@ describe('CommunityInfo with Groups', () => {
     await waitFor(() => expect(screen.getByText('Sub-groups coming soon')).toBeTruthy());
     expect(api.groups.list).not.toHaveBeenCalled();
   });
+
+  it('places community management and secondary actions inside the three-dot menu', async () => {
+    await renderWithProviders(<CommunityInfo />);
+
+    await waitFor(() => expect(screen.getByText('TEDx Junior Show')).toBeTruthy());
+    expect(screen.queryByText('Edit community')).toBeNull();
+    expect(screen.queryByText('Share community')).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText('Community options'));
+
+    await waitFor(() => expect(screen.getByText('Posts')).toBeTruthy());
+    expect(screen.getByText('Members')).toBeTruthy();
+    expect(screen.getByText('Share community')).toBeTruthy();
+    expect(screen.getByText('Join requests')).toBeTruthy();
+    expect(screen.getByText('Invitations')).toBeTruthy();
+    expect(screen.getByText('Edit community')).toBeTruthy();
+  });
 });
 
 describe('GroupConversationScreen & GroupInfoScreen', () => {
