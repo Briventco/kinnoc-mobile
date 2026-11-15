@@ -189,29 +189,36 @@ export default function CommunityInfo() {
 
         <View style={styles.identity}>
           <View style={styles.identityHeader}>
-            <CommunityAvatar id={c.id} monogram={c.monogram} uri={c.photoUrl} size={76} />
-            {member && c.role ? (
-              <View style={styles.statusPill}>
-                <CheckCircle2 size={14} color={colors.primary} strokeWidth={2.2} />
-                <Text variant="label" color="primary">
-                  {ROLE[c.role]}
+            <CommunityAvatar id={c.id} monogram={c.monogram} uri={c.photoUrl} size={56} />
+            <View style={styles.identityBody}>
+              <View style={styles.titleRow}>
+                <Text variant="section" accessibilityRole="header" numberOfLines={2} style={styles.flex}>
+                  {c.name}
+                </Text>
+                {member && c.role ? (
+                  <View style={styles.statusPill}>
+                    <CheckCircle2 size={13} color={colors.primary} strokeWidth={2.2} />
+                    <Text variant="label" color="primary">
+                      {ROLE[c.role]}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.metaRow}>
+                <VisIcon size={14} color={colors.textTertiary} strokeWidth={1.75} />
+                <Text variant="meta" color="textTertiary" numberOfLines={1} style={styles.flex}>
+                  {api.capabilities.communityGroups
+                    ? `${vis.label} · ${c.category} · ${plural(allGroups.length, 'group')}`
+                    : `${vis.label} · ${c.category} · ${plural(c.memberCount, 'member')}`}
                 </Text>
               </View>
-            ) : null}
+            </View>
           </View>
-
-          <Text variant="pageTitle" accessibilityRole="header">
-            {c.name}
-          </Text>
-          <View style={styles.metaRow}>
-            <VisIcon size={15} color={colors.textTertiary} strokeWidth={1.75} />
+          {!member ? (
             <Text variant="meta" color="textTertiary">
-              {vis.label} · {c.category} · {plural(c.memberCount, 'member')}
+              {JOIN_POLICY[c.joinPolicy]} · {plural(c.memberCount, 'member')}
             </Text>
-          </View>
-          <Text variant="meta" color="textTertiary">
-            {JOIN_POLICY[c.joinPolicy]}
-          </Text>
+          ) : null}
           {c.description ? (
             <View style={styles.descriptionBlock}>
               <Text
@@ -434,22 +441,24 @@ const styles = StyleSheet.create({
   flex: { flex: 1, minWidth: 0 },
   content: { paddingBottom: space[8] },
   cover: { width: '100%', aspectRatio: 3, backgroundColor: colors.surface3 },
-  identity: { paddingHorizontal: gutter, paddingTop: space[5], gap: space[3] },
-  identityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[3] },
+  identity: { paddingHorizontal: gutter, paddingTop: space[3], gap: space[2] },
+  identityHeader: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  identityBody: { flex: 1, minWidth: 0, gap: 3 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space[2] },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: colors.primarySubtle,
-    paddingHorizontal: space[3],
-    paddingVertical: 6,
+    paddingHorizontal: space[2],
+    paddingVertical: 4,
     borderRadius: radius.full,
   },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   descriptionBlock: { gap: space[1] },
   readMore: { alignSelf: 'flex-start' },
-  actions: { marginTop: space[1] },
-  groupsSection: { marginTop: space[6], gap: space[2] },
+  actions: { marginTop: 2 },
+  groupsSection: { marginTop: space[4], gap: space[1] },
   groupsHeader: {
     flexDirection: 'row',
     alignItems: 'center',

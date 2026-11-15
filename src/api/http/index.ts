@@ -218,7 +218,7 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
         });
         return mapPage(page, toCommunity);
       },
-      categories: () => client.get<Category[]>('/interests'),
+      categories: async () => (await client.get<Category[]>('/interests')) ?? [],
       get: getCommunity,
       create: async (input) => toCommunity(await client.post<ApiCommunity>('/communities', { body: toCommunityBody(input) })),
       update: async (id, changes) =>
@@ -383,8 +383,8 @@ export function createHttpApi(client: HttpClient, options: HttpApiOptions): Kinn
           toNotification,
         ),
       unreadCount: async () => {
-        const res = await client.get<{ count: number }>('/notifications/unread-count');
-        return res.count;
+        const res = await client.get<{ count?: number; unreadCount?: number } | undefined>('/notifications/unread-count');
+        return res?.count ?? res?.unreadCount ?? 0;
       },
       markRead: async (notificationId) => {
         await client.patch(`/notifications/${enc(notificationId)}/read`);
