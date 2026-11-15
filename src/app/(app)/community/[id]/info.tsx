@@ -4,6 +4,7 @@ import {
   Bell,
   BellOff,
   CheckCircle2,
+  EllipsisVertical,
   EyeOff,
   Globe,
   Inbox,
@@ -26,7 +27,8 @@ import type { Community, CommunityGroup } from '@/api/types';
 import { CommunityAvatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
 import { ScreenHeader } from '@/components/Header';
-import { ConfirmDialog } from '@/components/Overlays';
+import { IconButton } from '@/components/IconButton';
+import { ActionSheet, ConfirmDialog, type SheetAction } from '@/components/Overlays';
 import { Pressable } from '@/components/Pressable';
 import { CenteredSpinner, EmptyState, ErrorState, Hairline, SkeletonList } from '@/components/States';
 import { Text } from '@/components/Text';
@@ -35,7 +37,6 @@ import { useCommunityGroups, useJoinGroup } from '@/features/communities/groupHo
 import { GroupRow } from '@/features/communities/GroupRow';
 import { useCommunity, useInbox, useInboxActions, useLeaveCommunity } from '@/features/communities/hooks';
 import { MembershipActions } from '@/features/communities/MembershipActions';
-import { SettingRow } from '@/features/settings/SettingRow';
 import { plural } from '@/lib/format';
 import { shareCommunity } from '@/lib/shareLinks';
 import { api } from '@/services';
@@ -67,6 +68,8 @@ export default function CommunityInfo() {
   const { mute } = useInboxActions();
   const toast = useToast();
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   const member = community.data?.membership === 'member';
   const groups = useCommunityGroups(id, !!community.data && (member || community.data.visibility === 'public'));
@@ -97,6 +100,7 @@ export default function CommunityInfo() {
   const VisIcon = vis.icon;
   const canSeeMembers = member || c.visibility === 'public';
   const canSeePosts = api.capabilities.feed && (member || (c.visibility === 'public' && c.joinPolicy === 'open'));
+  const longDescription = c.description.length > 140 || c.description.split('\n').length > 3;
 
   const push = (
     pathname: '/community/[id]/members' | '/community/[id]/manage' | '/community/[id]/edit' | '/community/[id]/posts',
@@ -130,9 +134,49 @@ export default function CommunityInfo() {
     api.capabilities.communityGroups &&
     Boolean(groups.data?.canCreateGroup || c.role === 'owner' || c.role === 'moderator');
 
+  const menuActions: SheetAction[] = [
+    ...(canSeePosts ? [{ label: 'Posts', icon: Newspaper, onPress: () => push('/community/[id]/posts') }] : []),
+    ...(canSeeMembers ? [{ label: 'Members', icon: Users, onPress: () => push('/community/[id]/members') }] : []),
+    {
+      label: 'Share community',
+      icon: Share2,
+      onPress: () =>
+        void shareCommunity({
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          visibility: c.visibility,
+          description: c.description,
+        })
+          .then((res) => {
+            if (res.outcome === 'copied') toast.show({ message: 'Community link copied', aboveNav: false });
+          })
+          .catch(() => toast.show({ message: "Couldn't copy link", aboveNav: false })),
+    },
+    ...(manager
+      ? [
+          { label: 'Join requests', icon: Inbox, onPress: () => push('/community/[id]/manage', { tab: 'requests' }) },
+          { label: 'Invitations', icon: MailPlus, onPress: () => push('/community/[id]/manage', { tab: 'invitations' }) },
+        ]
+      : []),
+    ...(c.role === 'owner' ? [{ label: 'Edit community', icon: Pencil, onPress: () => push('/community/[id]/edit') }] : []),
+    ...(member && api.capabilities.inboxPreferences
+      ? [
+          {
+            label: muted ? 'Unmute notifications' : 'Mute notifications',
+            icon: muted ? BellOff : Bell,
+            onPress: () => mute.mutate({ id: c.id, muted: !muted }),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
-      <ScreenHeader title="Community" />
+      <ScreenHeader
+        title="Community"
+        right={<IconButton icon={EllipsisVertical} label="Community options" onPress={() => setMenuOpen(true)} />}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         {c.coverUrl ? (
           <Image
@@ -168,9 +212,29 @@ export default function CommunityInfo() {
           <Text variant="meta" color="textTertiary">
             {JOIN_POLICY[c.joinPolicy]}
           </Text>
-          <Text variant="post" color="textSecondary">
-            {c.description}
-          </Text>
+          {c.description ? (
+            <View style={styles.descriptionBlock}>
+              <Text
+                variant="post"
+                color="textSecondary"
+                numberOfLines={longDescription && !descExpanded ? 3 : undefined}
+              >
+                {c.description}
+              </Text>
+              {longDescription ? (
+                <Pressable
+                  onPress={() => setDescExpanded((v) => !v)}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  style={styles.readMore}
+                >
+                  <Text variant="label" color="primary">
+                    {descExpanded ? 'Show less' : 'See all'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
           <View style={styles.actions}>
             {member ? (
               <Button
@@ -315,100 +379,6 @@ export default function CommunityInfo() {
           </View>
         ) : null}
 
-        <View style={styles.rows}>
-          {canSeePosts ? (
-            <>
-              <Hairline />
-              <SettingRow
-                icon={Newspaper}
-                label="Posts"
-                detail={member ? 'Updates, questions and links from members' : 'What members are sharing'}
-                onPress={() => push('/community/[id]/posts')}
-              />
-            </>
-          ) : null}
-          {canSeeMembers ? (
-            <>
-              <Hairline />
-              <SettingRow
-                icon={Users}
-                label="Members"
-                detail={plural(c.memberCount, 'member')}
-                onPress={() => push('/community/[id]/members')}
-              />
-            </>
-          ) : null}
-          <Hairline />
-          <SettingRow
-            icon={Share2}
-            label="Share community"
-            detail="Share a link to this community"
-            onPress={() =>
-              void shareCommunity({
-                id: c.id,
-                name: c.name,
-                slug: c.slug,
-                visibility: c.visibility,
-                description: c.description,
-              })
-                .then((res) => {
-                  if (res.outcome === 'copied') toast.show({ message: 'Community link copied', aboveNav: false });
-                })
-                .catch(() => toast.show({ message: "Couldn't copy link", aboveNav: false }))
-            }
-          />
-          {manager ? (
-            <>
-              <Hairline />
-              <SettingRow
-                icon={Inbox}
-                label="Join requests"
-                detail="Approve or decline people asking to join"
-                onPress={() => push('/community/[id]/manage', { tab: 'requests' })}
-              />
-              <Hairline />
-              <SettingRow
-                icon={MailPlus}
-                label="Invitations"
-                detail="Invite people by username"
-                onPress={() => push('/community/[id]/manage', { tab: 'invitations' })}
-              />
-            </>
-          ) : null}
-          {c.role === 'owner' ? (
-            <>
-              <Hairline />
-              <SettingRow
-                icon={Pencil}
-                label="Edit community"
-                detail="Name, description, images and who can join"
-                onPress={() => push('/community/[id]/edit')}
-              />
-            </>
-          ) : null}
-          {member && api.capabilities.inboxPreferences ? (
-            <>
-              <Hairline />
-              <Pressable
-                style={styles.settingRow}
-                onPress={() => mute.mutate({ id: c.id, muted: !muted })}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: muted }}
-              >
-                {muted ? (
-                  <BellOff size={20} color={colors.text} strokeWidth={1.75} />
-                ) : (
-                  <Bell size={20} color={colors.text} strokeWidth={1.75} />
-                )}
-                <Text variant="tab" style={styles.flex}>
-                  {muted ? 'Unmute notifications' : 'Mute notifications'}
-                </Text>
-              </Pressable>
-            </>
-          ) : null}
-          {canSeeMembers || manager ? <Hairline /> : null}
-        </View>
-
         {member ? (
           <View style={styles.section}>
             {c.role === 'owner' ? (
@@ -426,6 +396,8 @@ export default function CommunityInfo() {
           </View>
         ) : null}
       </ScrollView>
+
+      <ActionSheet visible={menuOpen} title={c.name} onClose={() => setMenuOpen(false)} actions={menuActions} />
 
       <ConfirmDialog
         visible={confirmLeave}
@@ -474,6 +446,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
   },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  descriptionBlock: { gap: space[1] },
+  readMore: { alignSelf: 'flex-start' },
   actions: { marginTop: space[1] },
   groupsSection: { marginTop: space[6], gap: space[2] },
   groupsHeader: {
@@ -509,9 +483,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface2,
   },
   section: { paddingHorizontal: gutter, marginTop: space[6], gap: space[3] },
-  rows: { marginTop: space[6] },
   rule: { flexDirection: 'row', gap: space[3], alignItems: 'flex-start' },
   ruleNumber: { width: 22, fontSize: 18, lineHeight: 22, color: colors.textTertiary },
-  settingRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: gutter },
   leave: { alignSelf: 'flex-start', borderRadius: radius.field },
 });
