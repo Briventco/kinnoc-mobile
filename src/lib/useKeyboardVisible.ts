@@ -18,21 +18,26 @@ export const KEYBOARD_BEHAVIOR =
  * height occupied by the virtual keyboard so the input bar can be positioned directly above it.
  */
 export function useKeyboardHeight() {
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(() =>
+    Platform.OS !== 'web' && Keyboard.isVisible?.() ? (Keyboard.metrics?.()?.height ?? 0) : 0,
+  );
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
-      const show = Keyboard.addListener(
-        Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-        (e) => setKeyboardHeight(e.endCoordinates.height),
-      );
-      const hide = Keyboard.addListener(
-        Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-        () => setKeyboardHeight(0),
-      );
+      const subs = [
+        Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e) =>
+          setKeyboardHeight(e.endCoordinates.height),
+        ),
+        ...(Platform.OS === 'ios'
+          ? [
+              Keyboard.addListener('keyboardDidShow', (e) => setKeyboardHeight(e.endCoordinates.height)),
+              Keyboard.addListener('keyboardWillHide', () => setKeyboardHeight(0)),
+            ]
+          : []),
+        Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0)),
+      ];
       return () => {
-        show.remove();
-        hide.remove();
+        subs.forEach((s) => s.remove());
       };
     }
 
@@ -97,7 +102,7 @@ export function useKeyboardHeight() {
 
     return () => {
       window.removeEventListener('focusin', handleFocusIn);
-      window.removeEventListener('focusout', measureWebKeyboard);
+      window.removeEventListener('focusout', handleFocusOut);
       window.removeEventListener('scroll', resetScroll);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', measureWebKeyboard);
