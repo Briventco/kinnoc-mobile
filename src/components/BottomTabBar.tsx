@@ -1,7 +1,7 @@
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { router } from 'expo-router';
 import { Compass, House, MessageSquareText, Plus, User, type LucideIcon } from 'lucide-react-native';
-import { StyleSheet, View } from 'react-native';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 
 import { useInbox } from '@/features/communities/hooks';
 import { useKeyboardVisible } from '@/lib/useKeyboardVisible';
@@ -29,7 +29,7 @@ export function BottomTabBar({ state, descriptors, emitter, navigateToTab, inset
   const inbox = useInbox();
   const hasUnread = inbox.data?.some((e) => e.unreadCount > 0 && !e.isMuted) ?? false;
 
-  if (keyboard) return null;
+  if (keyboard && (Platform.OS === 'web' || Keyboard.isVisible?.() !== false)) return null;
 
   const leftRoutes = state.routes.slice(0, 2);
   const rightRoutes = state.routes.slice(2);
