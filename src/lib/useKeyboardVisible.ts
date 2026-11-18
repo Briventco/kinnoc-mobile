@@ -57,8 +57,17 @@ export function useKeyboardHeight() {
       }
     };
 
+    const isEditableFocused = () => {
+      if (typeof document === 'undefined') return false;
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return (el as HTMLElement).isContentEditable === true;
+    };
+
     const measureWebKeyboard = () => {
-      if (!window.visualViewport) {
+      if (!window.visualViewport || !isEditableFocused()) {
         setKeyboardHeight(0);
         return;
       }
@@ -67,8 +76,8 @@ export function useKeyboardHeight() {
       // Do NOT subtract vv.offsetTop: WebKit offsets the visual viewport to bring focused
       // inputs into view, which would cancel out the detected keyboard height.
       const rawDiff = window.innerHeight - vv.height;
-      // Keyboards on iOS/Android take at least 150px; use > 60px to avoid browser URL bar resizing
-      const isKeyboard = rawDiff > 60;
+      // Virtual keyboards are >= 150px; > 120px avoids iOS PWA status-bar / home-indicator insets (~60-95px).
+      const isKeyboard = rawDiff > 120;
       setKeyboardHeight(isKeyboard ? Math.round(rawDiff) : 0);
       if (isKeyboard) {
         resetScroll();
@@ -94,6 +103,8 @@ export function useKeyboardHeight() {
     window.addEventListener('focusin', handleFocusIn);
     window.addEventListener('focusout', handleFocusOut);
     window.addEventListener('scroll', resetScroll, { passive: true });
+    window.addEventListener('pageshow', measureWebKeyboard);
+    document.addEventListener('visibilitychange', measureWebKeyboard);
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', measureWebKeyboard);
@@ -104,6 +115,8 @@ export function useKeyboardHeight() {
       window.removeEventListener('focusin', handleFocusIn);
       window.removeEventListener('focusout', handleFocusOut);
       window.removeEventListener('scroll', resetScroll);
+      window.removeEventListener('pageshow', measureWebKeyboard);
+      document.removeEventListener('visibilitychange', measureWebKeyboard);
       if (window.visualViewport) {
         window.visualViewport.removeEventListener('resize', measureWebKeyboard);
         window.visualViewport.removeEventListener('scroll', measureWebKeyboard);
